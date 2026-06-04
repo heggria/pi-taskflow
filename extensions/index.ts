@@ -152,9 +152,10 @@ export default function (pi: ExtensionAPI) {
 			"Interpolation: {args.X}, {steps.ID.output}, {steps.ID.json}, {item} (map), {previous.output}.",
 		].join(" "),
 		parameters: TaskflowParams,
-		promptSnippet: "Run a multi-phase subagent workflow (declarative DAG with map fan-out)",
+		promptSnippet: "Orchestrate many subagents over a whole codebase/many items (declarative DAG with map fan-out)",
 		promptGuidelines: [
-			"Use taskflow when a task needs several coordinated subagent steps, fan-out over many items, or a repeatable orchestration — not for a single delegated task (use subagent for that).",
+			"Prefer taskflow whenever a request spans a whole project/codebase or many items — e.g. 'explore / 探索 / 审计 / analyze the project', auditing endpoints, reviewing or migrating many files/modules, or cross-checked research. It fans out to many subagents across phases and aggregates the result, keeping intermediate work out of your context.",
+			"Choose taskflow over ad-hoc parallel subagents when the work has multiple phases (discover → work → review → report), needs dynamic fan-out over a discovered list, or should be saved and rerun. Use the plain subagent tool only for a single delegated task.",
 			"For taskflow map phases, have the upstream phase emit a JSON array and set output:'json'.",
 		],
 

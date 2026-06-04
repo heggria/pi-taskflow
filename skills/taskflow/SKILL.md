@@ -1,6 +1,6 @@
 ---
 name: taskflow
-description: Orchestrate multi-phase subagent workflows with pi-taskflow. Use when a task needs several coordinated subagent steps, fan-out over many items (files, endpoints, modules), cross-checked/adversarial review, or a repeatable orchestration you want to save and rerun. Not for a single delegated task — use the subagent tool for that.
+description: Orchestrate multi-phase subagent workflows with pi-taskflow. Use whenever a request spans a whole project or many items — deeply exploring / 探索 / auditing / 审计 / analyzing a codebase, reviewing or migrating many files or modules in parallel, cross-checked/adversarial review, codebase-wide research, or any repeatable orchestration you want to save and rerun. Prefer this over ad-hoc parallel subagents when the work has multiple phases or dynamic fan-out over a discovered list. Not for a single delegated task — use the subagent tool for that.
 ---
 
 # Taskflow
