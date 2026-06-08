@@ -10,13 +10,19 @@
  * host conversation context — only the final phase output is returned.
  */
 
-import * as fs from "node:fs";
-import * as path from "node:path";
 import type { AgentToolResult } from "@earendil-works/pi-agent-core";
 import { StringEnum } from "@earendil-works/pi-ai";
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { getAgentDir } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext, ExtensionUIContext } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
+import {
+	RECOMMENDED_DEFAULTS,
+	readSettings,
+	writeSettings,
+	formatRolesReport,
+	formatDiffReport,
+	formatFlowResult,
+	runInteractiveInit,
+} from "./init.ts";
 import { Type } from "typebox";
 import { type AgentScope, discoverAgents, readSubagentSettings } from "./agents.ts";
 import { renderRunResult, summarizeRun } from "./render.ts";
@@ -87,6 +93,19 @@ const TaskflowParams = Type.Object({
 	runId: Type.Optional(Type.String({ description: "Run id to resume (for action=resume)" })),
 	scope: Type.Optional(
 		StringEnum(["user", "project"] as const, { description: "Where to save (action=save)", default: "project" }),
+	),
+	mode: Type.Optional(
+		StringEnum(["show", "apply-defaults", "interactive"] as const, {
+			description:
+				"Init action mode. 'show' is read-only (default); 'apply-defaults' requires force:true; 'interactive' requires a UI session.",
+			default: "show",
+		}),
+	),
+	force: Type.Optional(
+		Type.Boolean({
+			description:
+				"Destructive: overwrites modelRoles in settings.json. Required for mode='apply-defaults'.",
+		}),
 	),
 });
 
@@ -274,52 +293,72 @@ export default function (pi: ExtensionAPI) {
 			const action = params.action ?? "run";
 
 			// init — configure model roles
-	if (action === "init") {
-		const settingsPath = path.join(getAgentDir(), "settings.json");
-		let existing: Record<string, unknown> = {};
-		try { existing = JSON.parse(fs.readFileSync(settingsPath, "utf-8")); } catch {}
+			if (action === "init") {
+				const settings = readSettings();
+				const current = (settings.modelRoles ?? {}) as Record<string, string>;
+				const mode = params.mode;
 
-		const roleDescs: Record<string, string> = {
-			fast: "cheap & quick (executor, scout, recover, verifier, doc-writer, test-engineer)",
-			strong: "balanced (planner, reviewer, executor-code)",
-			thinker: "deep analysis (analyst, critic)",
-			arbiter: "final judgment (plan-arbiter, final-arbiter)",
-			vision: "multimodal (executor-ui, visual-explorer)",
-			reasoner: "cautious reasoning (risk-reviewer, security-reviewer)",
-		};
+				// v0.0.13 deprecation bridge: mode omitted → old behavior
+				if (mode === undefined) {
+					if (Object.keys(current).length === 0) {
+						// v0.0.12 compat: auto-write recommended defaults when modelRoles is empty
+						console.warn(
+							"[taskflow] action=init with no mode is deprecated and will require explicit mode in v0.0.14. " +
+								"Use mode='apply-defaults' with force=true.",
+						);
+						writeSettings({ ...settings, modelRoles: { ...RECOMMENDED_DEFAULTS } });
+						const text = formatDiffReport({}, RECOMMENDED_DEFAULTS);
+						return { content: [{ type: "text", text }], details: { action } satisfies TaskflowDetails };
+					}
+					// mode omitted + modelRoles exist → show
+					const text = formatRolesReport(current);
+					return { content: [{ type: "text", text }], details: { action } satisfies TaskflowDetails };
+				}
 
-		if (existing.modelRoles) {
-			const roles = existing.modelRoles as Record<string, string>;
-			const text = [
-				`Model roles already configured in ${settingsPath}:`,
-				...Object.entries(roles).map(([k, v]) => `  ${k.padEnd(10)} → ${v}  (${roleDescs[k] ?? ""})`),
-				``,
-				`To reconfigure, run /tf init interactively or edit settings.json directly.`,
-			].join("\n");
-			return { content: [{ type: "text", text }], details: { action } satisfies TaskflowDetails };
-		}
+				// mode === "show" (read-only, never overwrites)
+				if (mode === "show") {
+					const text = formatRolesReport(current);
+					return { content: [{ type: "text", text }], details: { action } satisfies TaskflowDetails };
+				}
 
-		const defaults: Record<string, string> = {
-			fast: "openrouter/deepseek/deepseek-v4-flash",
-			strong: "openrouter/xiaomi/mimo-v2.5-pro",
-			thinker: "openrouter/deepseek/deepseek-v4-pro",
-			arbiter: "openrouter/qwen/qwen3.7-max",
-			vision: "minimax/MiniMax-M3",
-			reasoner: "z-ai/glm-5.1",
-		};
+				// mode === "apply-defaults" requires explicit force=true
+				if (mode === "apply-defaults") {
+					if (!params.force)
+						return errorResult(action, "mode=apply-defaults requires force=true to overwrite.");
+					const merged: Record<string, string> = { ...RECOMMENDED_DEFAULTS };
+					for (const key of Object.keys(current)) {
+						if (!(key in merged)) merged[key] = current[key]; // stale-preserved
+					}
+					writeSettings({ ...settings, modelRoles: merged });
+					const text = formatDiffReport(current, merged);
+					return { content: [{ type: "text", text }], details: { action } satisfies TaskflowDetails };
+				}
 
-		const newSettings = { ...existing, modelRoles: defaults };
-		fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
-		fs.writeFileSync(settingsPath, JSON.stringify(newSettings, null, 2) + "\n", "utf-8");
+				// mode === "interactive" — requires a UI session
+				if (mode === "interactive") {
+					if (!ctx.hasUI)
+						return errorResult(action, "mode=interactive requires an interactive session.");
+					const enabledModels = (settings.enabledModels as string[] | undefined) ?? [];
+					const modelList =
+						enabledModels.length > 0
+							? enabledModels
+									.map((id) => ctx.modelRegistry.find(id.split("/")[0], id.split("/").slice(1).join("/")))
+									.filter((m): m is NonNullable<typeof m> => m !== undefined)
+							: ctx.modelRegistry.getAvailable();
+					const result = await runInteractiveInit({
+						hasUI: ctx.hasUI,
+						signal: signal ?? new AbortController().signal,
+						ui: ctx.ui as ExtensionUIContext,
+						modelRegistry: ctx.modelRegistry,
+						modelList,
+						currentRoles: current,
+					});
+					const text = formatFlowResult(result);
+					return { content: [{ type: "text", text }], details: { action } satisfies TaskflowDetails };
+				}
 
-		const text = [
-			`Wrote default model roles to ${settingsPath}:`,
-			...Object.entries(defaults).map(([k, v]) => `  ${k.padEnd(10)} → ${v}  (${roleDescs[k]})`),
-			``,
-			`These models require provider-specific API keys. Edit settings.json or run /tf init interactively.`,
-		].join("\n");
-		return { content: [{ type: "text", text }], details: { action } satisfies TaskflowDetails };
-	}
+				return errorResult(action, `Unknown init mode: ${String(mode)}`);
+			}
 
 	// agents — list available agents the LLM can use in phase definitions
 			if (action === "agents") {
@@ -568,85 +607,48 @@ export default function (pi: ExtensionAPI) {
 			}
 
 			if (sub === "init") {
-				const settingsPath = path.join(getAgentDir(), "settings.json");
-				let existing: Record<string, unknown> = {};
-				try { existing = JSON.parse(fs.readFileSync(settingsPath, "utf-8")); } catch {}
-				const currentRoles = (existing.modelRoles ?? {}) as Record<string, string>;
-
-				// Role definitions: name → { description, recommended models }
-				// Role definitions: name → description (no per-role filtering)
-				const roleDefs: Array<{ role: string; desc: string }> = [
-					{ role: "fast",     desc: "Cheap & quick — high-volume, low-stakes tasks (executor, scout, recover, verifier, doc-writer, test-engineer)" },
-					{ role: "strong",   desc: "Balanced — planning, review, moderate complexity (planner, reviewer, executor-code)" },
-					{ role: "thinker",  desc: "Deep analysis — requirements, ambiguity detection, critique (analyst, critic)" },
-					{ role: "arbiter",  desc: "Final judgment — tiebreak, plan quality gates (plan-arbiter, final-arbiter)" },
-					{ role: "vision",   desc: "Multimodal — UI work, design reading, Figma analysis (executor-ui, visual-explorer)" },
-					{ role: "reasoner", desc: "Cautious reasoning — security, risk review, sensitive changes (risk-reviewer, security-reviewer)" },
-				];
+				const settings = readSettings();
+				const currentRoles = (settings.modelRoles ?? {}) as Record<string, string>;
 
 				if (!ctx.hasUI) {
 					if (Object.keys(currentRoles).length > 0) {
 						ctx.ui.notify(
-							`Current model roles:\n` +
-							Object.entries(currentRoles).map(([k, v]) => `  ${k.padEnd(10)} → ${v}`).join("\n"),
-						"info"
+							formatRolesReport(currentRoles),
+							"info",
 						);
 					} else {
 						ctx.ui.notify(
-							`No modelRoles configured. Run /tf init in an interactive session to select models.`,
-						"warning"
+							"No modelRoles configured. Run /tf init in an interactive session to select models.",
+							"warning",
 						);
 					}
 					return;
 				}
 
-				// Use the user's scoped/enabled models (same list as /model command).
-				// Fall back to all auth-configured models if none are scoped.
-				const enabledModels = (existing.enabledModels as string[] | undefined) ?? [];
-				const modelList = enabledModels.length > 0
-					? enabledModels
-					: ctx.modelRegistry.getAvailable().map(m => `${m.provider}/${m.id}`);
-
-				// Interactive: walk through each role using the same model list
-				const chosen: Record<string, string> = {};
-				for (const rd of roleDefs) {
-					const current = currentRoles[rd.role];
-
-					const seen = new Set<string>();
-					const options: string[] = [];
-					for (const m of modelList) {
-						if (seen.has(m)) continue;
-						seen.add(m);
-						options.push(m === current ? `${m} (current)` : m);
-					}
-					options.push("───────────────");
-					options.push("Custom (type your own)");
-
-					const title = `Model for '${rd.role}' — ${rd.desc}` + (current ? `\nCurrent: ${current}` : "");
-					const pick = await ctx.ui.select(title, options, { signal: ctx.signal });
-
-					if (!pick || pick.startsWith("───")) {
-						chosen[rd.role] = current ?? modelList[0] ?? "";
-						continue;
-					}
-
-					if (pick === "Custom (type your own)") {
-						const custom = await ctx.ui.input(`Enter model identifier for '${rd.role}'`, "provider/model-id", { signal: ctx.signal });
-						chosen[rd.role] = custom?.trim() || current || "";
-					} else {
-						chosen[rd.role] = pick.replace(" (current)", "");
-					}
-				}
-
-				// Save
-				const newSettings = { ...existing, modelRoles: chosen };
-				fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
-				fs.writeFileSync(settingsPath, JSON.stringify(newSettings, null, 2) + "\n", "utf-8");
-
+				const enabledModels = (settings.enabledModels as string[] | undefined) ?? [];
+				const modelList =
+					enabledModels.length > 0
+						? enabledModels
+								.map((id) => ctx.modelRegistry.find(id.split("/")[0], id.split("/").slice(1).join("/")))
+								.filter((m): m is NonNullable<typeof m> => m !== undefined)
+						: ctx.modelRegistry.getAvailable();
+				const result = await runInteractiveInit({
+					hasUI: ctx.hasUI,
+					signal: ctx.signal ?? new AbortController().signal,
+					ui: ctx.ui,
+					modelRegistry: ctx.modelRegistry,
+					modelList,
+					currentRoles,
+				});
 				ctx.ui.notify(
-					`Saved model roles to ${settingsPath}:\n` +
-					Object.entries(chosen).map(([k, v]) => `  ${k.padEnd(10)} → ${v}`).join("\n"),
-				"info"
+					result.kind === "saved"
+						? `Saved model roles to ${result.savedPath}:\n${Object.entries(result.chosen)
+								.map(([k, v]) => `  ${k.padEnd(10)} → ${v}`)
+								.join("\n")}`
+						: result.kind === "no-change"
+							? "No changes made."
+							: "Init cancelled.",
+					result.kind === "saved" ? "info" : "info",
 				);
 				return;
 			}

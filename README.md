@@ -372,7 +372,7 @@ Saved flows become CLI shortcuts. All commands run in the Pi session:
 | `/tf init` | **Interactively map model roles** to your enabled models (writes `~/.pi/agent/settings.json`) |
 | `/tf:<name> [args]` | Shortcut — runs the flow in one tap |
 
-Tool actions (used by the model): `run` (inline `define` or saved `name`), `save`, `resume`, `list`.
+Tool actions (used by the model): `run` (inline `define` or saved `name`), `save`, `resume`, `list`, `init`.
 
 ## Resume across sessions
 
@@ -450,25 +450,51 @@ Without configuration, agents fall back to Pi's default model. To map roles to r
 /tf init
 ```
 
-`/tf init` is a guided, step-by-step picker. For **each role**, it shows your
-enabled models — the exact same scoped list as Pi's `/model` command — and you
-choose one (or type a custom identifier):
+`/tf init` starts with an **action menu**. First-time users get a 2-option shortcut ("Use recommended defaults" / "Configure each role"). Returning users see the full 5-option menu:
 
 ```
-Model for 'fast' — Cheap & quick (executor, scout, recover, verifier, ...)
+? What do you want to do with model roles?
+  ❯ Use recommended defaults
+    Configure each role
+    Edit one role
+    Show current roles
+    Cancel
+```
 
-  ❯ openrouter/deepseek/deepseek-v4-flash
-    openrouter/deepseek/deepseek-v4-pro
-    anthropic/claude-sonnet-4-6
-    z-ai/glm-5.1
-    ...
+The picker shows model **display names** with capability flags and current/recommended markers:
+
+```
+? Model for 'vision' — Multimodal (executor-ui, visual-explorer)
+  Current: openrouter/anthropic/claude-sonnet-4-6
+  Recommended: minimax/MiniMax-M3
+  ───────────────
+  ❯ MiniMax M3 (minimax/MiniMax-M3) · image ✓ · reasoning ✓ · (recommended)
+    Claude Sonnet 4.6 (openrouter/anthropic/...) · image ✓ · reasoning ✓ · (current)
+    GPT-5 (openrouter/openai/gpt-5) · image ✓
+    DeepSeek V4 Flash (openrouter/deepseek/v4-flash)
     ───────────────
     Custom (type your own)
+    Keep current
+    Back to action menu
 ```
 
-Re-running `/tf init` shows your current pick as `(current)` for each role, so
-you can revise the mapping any time. Your choices are written to
-`~/.pi/agent/settings.json`:
+Before saving, a **preview screen** shows the diff of your changes:
+
+```
+? Review changes:
+  fast       openrouter/deepseek/deepseek-v4-flash   (unchanged)
+  strong     openrouter/xiaomi/mimo-v2.5-pro         (unchanged)
+  thinker    openrouter/qwen/qwen3.7-max             (changed ← was: openrouter/deepseek/v4-pro)
+  arbiter    openrouter/qwen/qwen3.7-max             (unchanged)
+  vision     minimax/MiniMax-M3                      (unchanged)
+  reasoner   z-ai/glm-5.1                            (unchanged)
+  ───────────────
+  ❯ Save these changes
+    Edit a role
+    Cancel
+```
+
+Your choices are written to `~/.pi/agent/settings.json`:
 
 ```json
 {
@@ -496,6 +522,18 @@ Edit the values manually any time, or just re-run `/tf init`. You can also overr
   }
 }
 ```
+
+### Tool path (`action="init"`)
+
+The model can also configure roles via the `taskflow` tool:
+
+| Mode | Behavior |
+|---|---|
+| `mode: "show"` (default) | Read-only report of current `modelRoles`. Never overwrites. |
+| `mode: "apply-defaults"` + `force: true` | Writes `RECOMMENDED_DEFAULTS` to `settings.json`, preserving stale keys. |
+| `mode: "interactive"` | Launches the full action menu + picker flow (requires a UI session). |
+
+> **v0.0.13 deprecation note:** If `mode` is omitted, the tool falls back to v0.0.12 behavior when `modelRoles` is empty (auto-writes defaults) with a `console.warn` deprecation notice. If `modelRoles` already exists, it behaves as `mode: "show"`. This bridge will be removed in v0.0.14.
 
 ### Custom agents
 
