@@ -17,7 +17,7 @@ import { execFileSync } from "node:child_process";
 import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { cacheDir, hashInput, withLock, writeFileAtomic } from "./store.ts";
+import { cacheDir, withLock, writeFileAtomic } from "./store.ts";
 
 // ---------------------------------------------------------------------------
 // Fingerprint resolution
@@ -260,9 +260,4 @@ export class CacheStore {
 			}
 		}
 	}
-}
-
-/** Convenience: compute a cross-run cache key from base parts + fingerprint. */
-export function cacheKeyWithFingerprint(baseParts: string[], fingerprint: string): string {
-	return fingerprint ? hashInput(...baseParts, fingerprint) : hashInput(...baseParts);
 }
