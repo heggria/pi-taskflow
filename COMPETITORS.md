@@ -10,7 +10,7 @@
 | Framework | Orchestration model | Authoring | Durable / resume | Dynamic fan-out | Human-in-loop | Quality gate | Static verification | Cross-run memoization | Observability | Deps | Uniquely good at |
 |---|---|---|---|:--:|:--:|:--:|:--:|:--:|---|:--:|---|
 | **▼ LOCAL / EMBEDDED DAG DSL** |||||||||||
-| **pi-taskflow** | Declarative JSON-DSL DAG (7 phase types) | JSON data | phase-level input-hash cache + cross-session resume | **YES** (`map`) | YES (approval) | YES (verdict) | NO (planned) | NO (planned) | basic (live DAG render; no OTel) | **ZERO** | zero-dep declarative subagent DAG; phase-hash caching; when-guards; budget caps |
+| **pi-taskflow** | Declarative JSON-DSL DAG (10 phase types) | JSON data | phase-level input-hash cache + cross-session resume | **YES** (`map`) | YES (approval) | YES (verdict) | NO (planned) | **YES** | basic (live DAG render; no OTel) | **ZERO** | zero-dep declarative subagent DAG; phase-hash caching; when-guards; budget caps; loop·tournament·cross-run cache |
 | **▼ GRAPH / STATE-MACHINE** |||||||||||
 | LangGraph | StateGraph nodes/edges + Pregel super-steps | Python/JS code | checkpointer every super-step; time travel | YES (`Send`) | YES (`interrupt()` any node) | NO builtin | YES (`.compile()` + typed state) | within-session only | YES (LangSmith) | heavy | checkpoint durability + time travel; largest community |
 | Google ADK | Directed graph + agent-tree hierarchy | Python/JS/Go/Java/Kotlin | durable memory; event-driven dormancy | YES | YES (any-node) | YES (safety framework) | YES (inferred from graph compile) | UNVERIFIED | YES (builtin logs/metrics/traces) | medium | multi-language agent-tree hierarchy; first-class delegation |
@@ -56,18 +56,18 @@
 | # | White space | State across all competitors | Our opportunity |
 |---|-------------|------------------------------|-----------------|
 | 1 | **Zero-token static DAG verification** | none has a dead-phase/unreachable/ref analyzer that runs without an LLM | ship `verify` — structural correctness for 0 tokens |
-| 2 | **Cross-run memoization keyed on phase input hash** | nobody (Temporal=within-run, LangGraph=within-session) | extend existing phase-hash cache to persistent cross-run |
+| 2 | **Cross-run memoization keyed on phase input hash** | nobody (Temporal=within-run, LangGraph=within-session) | `cache` — **✅ shipped** (git/glob/file/env fingerprints, TTL, LRU eviction) |
 | 3 | **Declarative-as-data multi-target compilation** | nobody (all runtime-coupled) | "LLVM of agent orchestration" — compile one DSL to many runtimes |
 | 4 | **Typed human-approval verdict schemas** | most have generic pause/approve | formalize verdict outcomes + auto-routing |
 | 5 | **Budget-aware DAG with hard enforcement** | all track, none enforce | budget pools + pre-flight cost estimation |
 | 6 | **Subagent-native orchestration** | none targets a coding agent's internal subagent pipeline | defensible specialization for Pi's AGENTS.md routing |
 | 7 | **Worktree-isolated phase execution** | none isolates per-phase filesystem | worktree-per-phase with explicit merge |
 | 8 | **Tournament/bracket pattern** | none has rank-and-promote | `tournament` phase type — **✅ shipped** |
-| 9 | **Loop-until-done with convergence detection** | LangGraph has cycles, none has declarative convergence loop | `loop` phase type |
+| 9 | **Loop-until-done with convergence detection** | LangGraph has cycles, none has declarative convergence loop | `loop` phase type — **✅ shipped** (until+convergence+maxIterations) |
 
 ## Key Insights
 
-- **Nobody owns cross-run memoization** — our most valuable near-term differentiator (already half-built).
+- **Nobody owns cross-run memoization** — pi-taskflow shipped it (`cache` → persistent store with fingerprint guards); nobody else has equivalent.
 - **Temporal is the only true durability** — we don't need to match it; Mastra-level suspend/resume + phase-hash caching is enough for subagent orchestration.
 - **The visual-builder gap is real but may not matter** for our target users (Pi subagent operators).
 - **Multi-target compilation is the deepest moat** — competitors are runtime-coupled and structurally can't do it.
