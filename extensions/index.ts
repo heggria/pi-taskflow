@@ -24,7 +24,7 @@ import {
 	runInteractiveInit,
 } from "./init.ts";
 import { Type } from "typebox";
-import { type AgentScope, discoverAgents, readSubagentSettings } from "./agents.ts";
+import { type AgentScope, discoverAgents, readSubagentSettings, syncBuiltinAgentsToProject } from "./agents.ts";
 import { renderRunResult, summarizeRun } from "./render.ts";
 import { RunHistoryComponent, type RunHistoryResult } from "./runs-view.ts";
 import { executeTaskflow, type ApprovalDecision, type ApprovalRequest, type RuntimeResult } from "./runtime.ts";
@@ -255,6 +255,16 @@ export default function (pi: ExtensionAPI) {
 	pi.on("session_start", async (_e, ctx) => {
 		registerSavedFlowCommands(ctx);
 
+		// Sync built-in agents into .pi/agents/ so Pi's native subagent tool
+		// (and any other extension) can discover them — taskflow's
+		// extensions/agents/ directory is invisible to the rest of Pi.
+		try {
+			syncBuiltinAgentsToProject(ctx.cwd);
+		} catch {
+			// Best-effort: a locked or readonly .pi/ directory must not block
+			// session startup.
+		}
+
 		// Hint: prompt to configure model roles if not set
 		try {
 			const settings = readSubagentSettings();
@@ -272,20 +282,19 @@ export default function (pi: ExtensionAPI) {
 		name: "taskflow",
 		label: "Taskflow",
 		description: [
-			"Orchestrate a multi-phase workflow of subagents from a declarative definition.",
-			"Phases (agent, parallel, map, gate, reduce, approval, flow) form a DAG; intermediate outputs stay out of your context — only the final phase output is returned.",
-			"Use action=run with an inline `define` (you write the DSL) or a saved `name`.",
-			"For simple non-DAG delegations (like the subagent tool) skip the DSL: pass `task` (+optional `agent`) for one task, `tasks:[{task,agent?}]` to run in parallel, or `chain:[{task,agent?}]` to run sequentially (reference the prior step with {previous.output}).",
-			"Use action=save to persist a definition as a reusable /tf:<name> command. action=resume continues a paused run. action=list shows saved flows. Use action=agents to list available agents — do NOT invent agent names; either use an agent from that list or omit the 'agent' field to auto-select the default agent.",
-			"DSL: {name, args?, concurrency?, budget?:{maxUSD,maxTokens}, phases:[{id, type, agent, task, dependsOn?, join?:'all'|'any', when?, retry?:{max,backoffMs,factor}, over?(map), as?(map), branches?(parallel), from?(reduce), use?(flow), with?(flow), output?:'json', final?}]}.",
-			"Phase types: agent (one subagent), parallel (static branches), map (dynamic fan-out over an array), gate (VERDICT: PASS/BLOCK quality gate), reduce (aggregate from N phases), approval (human-in-the-loop pause), flow (run a saved sub-flow), loop (re-run a task until 'until' is truthy / converged / maxIterations; body reads {loop.iteration} and {loop.lastOutput}), tournament (spawn N variants of 'task' — or distinct 'branches' — then a judge picks the best / aggregates; mode:'best'|'aggregate'). join:'any' is an OR-join; when is a conditional guard; retry adds backoff; budget caps run cost.",
+			"Orchestrate subagents — the ONLY delegation tool. Fully replaces the built-in subagent tool.",
+			"Shorthand (same API as subagent): pass `task` (+optional `agent`) for one task, `tasks:[{task,agent?}]` for parallel, or `chain:[{task,agent?}]` for sequential (use {previous.output}).",
+			"DSL: use action=run with an inline `define` (you write the DAG) or a saved `name`. Phases (agent, parallel, map, gate, reduce, approval, flow, loop, tournament) form a DAG; intermediate outputs stay out of your context — only the final phase output is returned.",
+			"Every delegation is tracked (runId), resumable across sessions, and saveable as /tf:<name> via action=save.",
+			"Use action=agents to list the 18 built-in agents (executor, scout, planner, analyst, critic, reviewer, risk-reviewer, security-reviewer, plan-arbiter, final-arbiter, test-engineer, doc-writer, executor-code, executor-fast, executor-ui, recover, verifier, visual-explorer). Do NOT invent agent names.",
+			"Phase types: agent, parallel (static branches), map (dynamic fan-out over array), gate (VERDICT: PASS/BLOCK), reduce (aggregate from N), approval (human-in-the-loop), flow (run saved sub-flow), loop (iterate until condition/convergence/cap), tournament (N variants, judge picks best/aggregate).",
 			"Interpolation: {args.X}, {steps.ID.output}, {steps.ID.json}, {item} (map), {previous.output}.",
 		].join(" "),
 		parameters: TaskflowParams,
-		promptSnippet: "Orchestrate many subagents over a whole codebase/many items (declarative DAG with map fan-out)",
+		promptSnippet: "Orchestrate subagents — single, parallel, chain, or DAG — with tracking, resume, and context isolation. Replaces the subagent tool.",
 		promptGuidelines: [
-			"Prefer taskflow whenever a request spans a whole project/codebase or many items — e.g. 'explore / 探索 / 审计 / analyze the project', auditing endpoints, reviewing or migrating many files/modules, or cross-checked research. It fans out to many subagents across phases and aggregates the result, keeping intermediate work out of your context.",
-			"Choose taskflow over ad-hoc parallel subagents when the work has multiple phases (discover → work → review → report), needs dynamic fan-out over a discovered list, or should be saved and rerun. For simple single/parallel/chain delegations use the shorthand `task`/`tasks`/`chain` (no DSL) when you want the run tracked, resumable, or saveable; otherwise the plain subagent tool is fine.",
+			"Use taskflow for ALL delegation — single tasks, parallel, chain, or full DAG orchestration. It fully replaces the subagent tool: every delegation is tracked with a runId, resumable across sessions, context-isolated (only final output returns), and saveable as /tf:<name>. Do NOT call the subagent tool directly; use taskflow shorthand (task/tasks/chain) for simple cases instead.",
+			"For complex multi-phase work (explore / 审计 / analyze the project, auditing endpoints, reviewing or migrating many files/modules, cross-checked research), use the full DSL with phases. For taskflow map phases, have the upstream phase emit a JSON array and set output:'json'.",
 			"For taskflow map phases, have the upstream phase emit a JSON array and set output:'json'.",
 		],
 

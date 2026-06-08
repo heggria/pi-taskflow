@@ -208,3 +208,50 @@ export function readSubagentSettings(): SubagentSettings {
 		return {};
 	}
 }
+
+/**
+ * Copy the 18 built-in agents from extensions/agents/*.md into the project's
+ * .pi/agents/ directory so Pi's native subagent tool (and any other extension)
+ * can discover them. taskflow's own discoverAgents() already reads from this
+ * directory with lower priority than built-in, so the copy is a no-op for
+ * taskflow phases — it only matters for Pi's native agent discovery.
+ *
+ * Idempotent: only copies agents whose built-in source is newer than the
+ * project copy (or that don't exist yet).
+ */
+export function syncBuiltinAgentsToProject(cwd: string): void {
+	const builtInDir = path.resolve(import.meta.dirname, "agents");
+	if (!fs.existsSync(builtInDir)) return;
+
+	const projectAgentsDir = path.join(cwd, ".pi", "agents");
+	fs.mkdirSync(projectAgentsDir, { recursive: true });
+
+	let entries: fs.Dirent[];
+	try {
+		entries = fs.readdirSync(builtInDir, { withFileTypes: true });
+	} catch {
+		return;
+	}
+
+	for (const entry of entries) {
+		if (!entry.isFile() || !entry.name.endsWith(".md")) continue;
+		const src = path.join(builtInDir, entry.name);
+		const dst = path.join(projectAgentsDir, entry.name);
+
+		let srcMtime = 0;
+		try { srcMtime = fs.statSync(src).mtimeMs; } catch { continue; }
+
+		let dstMtime = 0;
+		try { dstMtime = fs.statSync(dst).mtimeMs; } catch { /* dst doesn't exist yet */ }
+
+		// Only copy when the source is newer (or the destination is missing).
+		if (srcMtime <= dstMtime) continue;
+
+		try {
+			const content = fs.readFileSync(src, "utf-8");
+			fs.writeFileSync(dst, content, "utf-8");
+		} catch {
+			// Best-effort: a locked file must not block the sync.
+		}
+	}
+}

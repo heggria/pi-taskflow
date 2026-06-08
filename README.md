@@ -7,7 +7,9 @@
   <a href="https://www.npmjs.com/package/pi-taskflow"><img src="https://img.shields.io/npm/dm/pi-taskflow?style=flat-square&color=6E8BFF&label=downloads" alt="npm downloads"></a>
   <a href="./LICENSE"><img src="https://img.shields.io/badge/license-MIT-43D9AD?style=flat-square" alt="MIT license"></a>
   <a href="#whats-inside"><img src="https://img.shields.io/badge/runtime%20deps-0-43D9AD?style=flat-square" alt="zero runtime dependencies"></a>
-  <a href="#whats-inside"><img src="https://img.shields.io/badge/tests-371-6E8BFF?style=flat-square" alt="371 tests"></a>
+  <a href="https://github.com/heggria/pi-taskflow/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/heggria/pi-taskflow/ci.yml?branch=main&style=flat-square&label=CI" alt="CI status"></a>
+  <a href="#whats-inside"><img src="https://img.shields.io/badge/tests-394-6E8BFF?style=flat-square" alt="394 tests"></a>
+  <a href="#whats-inside"><img src="https://img.shields.io/badge/dogfooded-%E2%9C%93-43D9AD?style=flat-square" alt="dogfooded"></a>
   <a href="https://pi.dev"><img src="https://img.shields.io/badge/for-Pi%20coding%20agent-B692FF?style=flat-square" alt="for the Pi coding agent"></a>
 </p>
 
@@ -574,7 +576,7 @@ Copy one into `.pi/taskflows/<name>.json` (or `~/.pi/agent/taskflows/`) and it r
 
 <div align="center">
 
-**0 runtime dependencies** · **371 tests** · **10 phase types** · **cross-session resume** · **cross-run memoization** · **~4.9k LOC runtime**
+**0 runtime dependencies** · **394 tests** · **10 phase types** · **cross-session resume** · **cross-run memoization** · **~4.9k LOC runtime**
 
 </div>
 
@@ -583,7 +585,21 @@ Copy one into `.pi/taskflows/<name>.json` (or `~/.pi/agent/taskflows/`) and it r
 - **Hardened by design.** Path-traversal defense (lexical + `realpath`), runId validation, HTML/error sanitization, atomic writes, stale-lock stealing via `rename`, and an idle watchdog that kills wedged subagents.
 - **Dogfooded.** Every new feature has to survive the project's own `self-improve` taskflow before it ships.
 
-If this saves you a context window, **drop a ⭐ on [GitHub](https://github.com/heggria/pi-taskflow)** — it genuinely helps.
+## 🍽️ We eat our own dog food
+
+Every feature in `pi-taskflow` ships **through `pi-taskflow`.**
+
+Our `self-improve` flow is a 10-phase DAG — it audits the codebase, patches defects, verifies correctness, gates on quality, and surfaces the report — all declaratively. It's saved as `/tf:self-improve` and run before every release. No other agent orchestrator in the Pi ecosystem builds itself with itself.
+
+| Campaign | Scale | Phases | Outcome |
+|----------|-------|--------|---------|
+| [v0.0.8 dogfood](./docs/dogfooding-v0.0.8-report.md) | Full codebase audit → triage → fix → verify | 10 phases, 234 tests | 13 fixes, all pass |
+| [v0.0.6 self-audit](./docs/self-audit-report.md) | inventory → map audit → gate → approval → map fix → reduce | 9 phases | 11 critical defects fixed |
+| [Cross-run cache dogfood](./docs/rfc-cross-run-memoization.md) | Real runtime + on-disk store | Dedicated test harness | Cache correctness under adversarial fingerprints |
+| [Adversarial cross-review](./docs/brainstorm-adversarial-review-report.md) | Multi-agent adversarial review | `tournament` + `gate` | P0 cache-key fix shipped |
+| [Init redesign review](./docs/issue-necessity-review-report.md) | Necessity audit → parallel checks → verdict | 7 phases | Full redesign plan validated |
+
+> **Meta:** we used `pi-taskflow`'s `map` fan-out, `gate` verdicts, `approval` human-in-the-loop, `tournament` best-of-N, `loop` until-done, and `cross-run` cache — to build `pi-taskflow`.
 
 ## Status & limits
 
