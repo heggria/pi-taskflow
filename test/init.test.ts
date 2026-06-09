@@ -164,6 +164,7 @@ test("formatTaskflowSettingsReport: formats default settings", () => {
 
 test("formatTaskflowSettingsReport: formats disabled settings", () => {
 	const report = formatTaskflowSettingsReport({
+		...DEFAULT_TASKFLOW_SETTINGS,
 		builtInAgents: false,
 		syncBuiltinAgentsToProject: false,
 	});
@@ -872,7 +873,7 @@ test("runInteractiveInit: 'Configure taskflow preferences' → disable built-ins
 
 	// Verify the settings were actually written to disk
 	const saved = readSettings();
-	assert.deepEqual(saved.taskflow, { builtInAgents: false, syncBuiltinAgentsToProject: false });
+	assert.deepEqual(saved.taskflow, { builtInAgents: false, syncBuiltinAgentsToProject: false, maxKeptRuns: 100, maxRunAgeDays: 30 });
 });
 
 test("runInteractiveInit: 'Configure taskflow preferences' → enable + sync → preferences-saved", async () => {

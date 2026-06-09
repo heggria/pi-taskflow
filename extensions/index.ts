@@ -38,6 +38,8 @@ import {
 	type RunState,
 	saveFlow,
 	saveRun,
+	DEFAULT_KEPT_RUNS,
+	DEFAULT_RUN_AGE_DAYS,
 } from "./store.ts";
 import { CacheStore } from "./cache.ts";
 
@@ -142,11 +144,12 @@ async function runFlow(
 
 	// Throttled persistence: avoid disk writes on every sub-item event.
 	let lastPersist = 0;
+	const cleanupConfig = { maxKeep: DEFAULT_KEPT_RUNS, maxAgeDays: DEFAULT_RUN_AGE_DAYS };
 	const persistThrottled = (s: RunState) => {
 		const now = Date.now();
 		if (now - lastPersist >= 1000) {
 			lastPersist = now;
-			saveRun(s);
+			saveRun(s, cleanupConfig);
 		}
 	};
 
@@ -189,6 +192,8 @@ async function runFlow(
 		// discoverAgents or readSubagentSettings (F-001) is caught and
 		// the heartbeat timer is cleared by the finally block below.
 		const settings = readSubagentSettings();
+		cleanupConfig.maxKeep = settings.taskflow.maxKeptRuns;
+		cleanupConfig.maxAgeDays = settings.taskflow.maxRunAgeDays;
 		const scope: AgentScope = def.agentScope ?? "user";
 		const { agents } = discoverAgents(ctx.cwd, scope, settings.agentOverrides, settings.modelRoles, settings.taskflow);
 
@@ -225,7 +230,7 @@ async function runFlow(
 		return result;
 	} finally {
 		if (heartbeat) clearInterval(heartbeat);
-		saveRun(state); // force-persist terminal state
+		saveRun(state, cleanupConfig); // force-persist terminal state
 		emit(state); // final render reflecting terminal state
 	}
 }

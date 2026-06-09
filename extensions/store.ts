@@ -121,6 +121,10 @@ const DEFAULT_MAX_KEPT_TERMINAL = 100;
 /** Remove terminal runs older than this (days). */
 const DEFAULT_MAX_AGE_DAYS = 30;
 
+// Re-exported for use in TaskflowSettings defaults (agents.ts).
+export const DEFAULT_KEPT_RUNS = DEFAULT_MAX_KEPT_TERMINAL;
+export const DEFAULT_RUN_AGE_DAYS = DEFAULT_MAX_AGE_DAYS;
+
 /** Last cleanup timestamp — module-level so it persists across calls. */
 let lastCleanupAt = 0;
 
@@ -460,6 +464,12 @@ function cleanupTerminalRuns(
 
 	if (toRemove.length === 0) return;
 
+	console.warn(
+		`[taskflow] Cleaning up ${toRemove.length} old run(s) ` +
+		`(max ${maxKeep} runs, ${maxAgeDays} day age limit). ` +
+		`Configure 'taskflow.maxKeptRuns' / 'taskflow.maxRunAgeDays' in settings.json (0 = keep all).`,
+	);
+
 	// Delete run files + lock files (outside the index lock).
 	for (const e of toRemove) {
 		const filePath = path.join(runsRoot, e.relPath);
@@ -548,6 +558,8 @@ export function getFlow(cwd: string, name: string): SavedFlow | null {
 	return listFlows(cwd).find((f) => f.name === name) ?? null;
 }
 
+let _piCreationHinted = false;
+
 export function saveFlow(
 	cwd: string,
 	def: Taskflow,
@@ -558,8 +570,19 @@ export function saveFlow(
 	const safe = def.name.replace(/[^\w.-]+/g, "_");
 	const filePath = path.join(dir, `${safe}.json`);
 	writeFileAtomic(filePath, `${JSON.stringify(def, null, 2)}\n`);
+
+	// One-shot: let the user know we're creating a .pi/ directory on first save.
+	if (!_piCreationHinted) {
+		_piCreationHinted = true;
+		console.warn(
+			`[taskflow] Created .pi/taskflows/ for project-scoped flow storage. ` +
+			`Add .pi/ to .gitignore if desired.`,
+		);
+	}
+
 	return { filePath };
 }
+
 
 // --- Run state ---
 
@@ -590,7 +613,7 @@ export function newRunId(flowName: string): string {
  * F-009: shallow-clones state before stamping updatedAt to avoid mutating the
  * caller's reference.
  */
-export function saveRun(state: RunState): void {
+export function saveRun(state: RunState, cleanup?: { maxKeep?: number; maxAgeDays?: number }): void {
 	const root = runsDir(state.cwd);
 	const flowDir = flowRunDir(root, state.flowName);
 	fs.mkdirSync(flowDir, { recursive: true });
@@ -608,7 +631,11 @@ export function saveRun(state: RunState): void {
 	});
 
 	// Opportunistic cleanup — throttled to once per CLEANUP_INTERVAL_MS.
-	cleanupTerminalRuns(root);
+	const maxKeep = cleanup?.maxKeep ?? DEFAULT_MAX_KEPT_TERMINAL;
+	const maxAgeDays = cleanup?.maxAgeDays ?? DEFAULT_MAX_AGE_DAYS;
+	if (maxKeep > 0 || maxAgeDays > 0) {
+		cleanupTerminalRuns(root, maxKeep, maxAgeDays);
+	}
 }
 
 /**

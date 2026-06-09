@@ -15,11 +15,19 @@ export interface TaskflowSettings {
 	builtInAgents: boolean;
 	/** Whether package-local built-ins are copied into the current project's .pi/agents/. */
 	syncBuiltinAgentsToProject: boolean;
+	/** Maximum completed/failed runs to keep. 0 disables cleanup. */
+	maxKeptRuns: number;
+	/** Maximum age (days) for completed/failed runs. 0 disables age cleanup. */
+	maxRunAgeDays: number;
 }
+
+import { DEFAULT_KEPT_RUNS, DEFAULT_RUN_AGE_DAYS } from "./store.ts";
 
 export const DEFAULT_TASKFLOW_SETTINGS: TaskflowSettings = {
 	builtInAgents: true,
 	syncBuiltinAgentsToProject: false,
+	maxKeptRuns: DEFAULT_KEPT_RUNS,
+	maxRunAgeDays: DEFAULT_RUN_AGE_DAYS,
 };
 
 export function normalizeTaskflowSettings(raw: unknown): TaskflowSettings {
@@ -36,6 +44,14 @@ export function normalizeTaskflowSettings(raw: unknown): TaskflowSettings {
 			typeof rec.syncBuiltinAgentsToProject === "boolean"
 				? rec.syncBuiltinAgentsToProject
 				: DEFAULT_TASKFLOW_SETTINGS.syncBuiltinAgentsToProject,
+		maxKeptRuns:
+			typeof rec.maxKeptRuns === "number" && rec.maxKeptRuns >= 0 && Number.isInteger(rec.maxKeptRuns)
+				? rec.maxKeptRuns
+				: DEFAULT_TASKFLOW_SETTINGS.maxKeptRuns,
+		maxRunAgeDays:
+			typeof rec.maxRunAgeDays === "number" && rec.maxRunAgeDays >= 0 && Number.isInteger(rec.maxRunAgeDays)
+				? rec.maxRunAgeDays
+				: DEFAULT_TASKFLOW_SETTINGS.maxRunAgeDays,
 	};
 }
 

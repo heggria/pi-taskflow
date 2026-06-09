@@ -99,6 +99,8 @@ test("normalizeTaskflowSettings: accepts only boolean preference values", () => 
 	assert.deepEqual(normalizeTaskflowSettings({ builtInAgents: false, syncBuiltinAgentsToProject: true }), {
 		builtInAgents: false,
 		syncBuiltinAgentsToProject: true,
+		maxKeptRuns: DEFAULT_TASKFLOW_SETTINGS.maxKeptRuns,
+		maxRunAgeDays: DEFAULT_TASKFLOW_SETTINGS.maxRunAgeDays,
 	});
 	assert.deepEqual(normalizeTaskflowSettings({ builtInAgents: "false", syncBuiltinAgentsToProject: "true" }), DEFAULT_TASKFLOW_SETTINGS);
 });
@@ -110,8 +112,8 @@ test("shouldLoadBuiltinAgents: follows taskflow builtInAgents setting", () => {
 
 test("shouldSyncBuiltinAgentsToProject: disabled by default and requires built-ins to be enabled", () => {
 	assert.equal(shouldSyncBuiltinAgentsToProject(DEFAULT_TASKFLOW_SETTINGS), false);
-	assert.equal(shouldSyncBuiltinAgentsToProject({ builtInAgents: true, syncBuiltinAgentsToProject: true }), true);
-	assert.equal(shouldSyncBuiltinAgentsToProject({ builtInAgents: false, syncBuiltinAgentsToProject: true }), false);
+	assert.equal(shouldSyncBuiltinAgentsToProject({ ...DEFAULT_TASKFLOW_SETTINGS, builtInAgents: true, syncBuiltinAgentsToProject: true }), true);
+	assert.equal(shouldSyncBuiltinAgentsToProject({ ...DEFAULT_TASKFLOW_SETTINGS, builtInAgents: false, syncBuiltinAgentsToProject: true }), false);
 });
 
 // ===========================================================================
@@ -164,8 +166,8 @@ test("discoverAgents: skips built-in agents when taskflow.builtInAgents is false
 	process.env[BUILTIN_DIR_ENV] = builtInDir;
 
 	const { agents } = discoverAgents(projectCwd, "both", undefined, undefined, {
+		...DEFAULT_TASKFLOW_SETTINGS,
 		builtInAgents: false,
-		syncBuiltinAgentsToProject: false,
 	});
 	assert.deepEqual(agents.map((a) => a.name), []);
 });
@@ -588,11 +590,11 @@ test("readSubagentSettings: parses taskflow preferences from settings.json", () 
 	const settingsPath = path.join(userAgentDir, "settings.json");
 	fs.writeFileSync(
 		settingsPath,
-		JSON.stringify({ taskflow: { builtInAgents: false, syncBuiltinAgentsToProject: false } }),
+		JSON.stringify({ taskflow: { builtInAgents: false, syncBuiltinAgentsToProject: false, maxKeptRuns: 100, maxRunAgeDays: 30 } }),
 	);
 
 	const settings = readSubagentSettings();
-	assert.deepEqual(settings.taskflow, { builtInAgents: false, syncBuiltinAgentsToProject: false });
+	assert.deepEqual(settings.taskflow, { builtInAgents: false, syncBuiltinAgentsToProject: false, maxKeptRuns: 100, maxRunAgeDays: 30 });
 });
 
 test("readSubagentSettings: malformed taskflow preferences fall back to defaults", () => {
