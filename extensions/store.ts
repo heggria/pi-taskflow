@@ -128,6 +128,9 @@ export const DEFAULT_RUN_AGE_DAYS = DEFAULT_MAX_AGE_DAYS;
 /** Last cleanup timestamp — module-level so it persists across calls. */
 let lastCleanupAt = 0;
 
+/** Shared buffer for Atomics.wait in acquireLock busy-wait (Finding 6). */
+const LOCK_WAIT_BUF = new Int32Array(new SharedArrayBuffer(4));
+
 // ---------------------------------------------------------------------------
 // Internal helpers — path construction & sanitisation
 // ---------------------------------------------------------------------------
@@ -142,7 +145,7 @@ let lastCleanupAt = 0;
  * bare-dot / leading-dot components after the character substitution so the
  * write path can never escape runs/ (risk-reviewer v0.0.9 audit, H1).
  */
-function safeFlowDirName(flowName: string): string {
+export function safeFlowDirName(flowName: string): string {
 	let safe = flowName.replace(/[^\w.-]+/g, "_");
 	// Collapse leading dots: blocks ".", "..", and hidden-dir names like ".git".
 	safe = safe.replace(/^\.+/, "_");
@@ -245,7 +248,7 @@ function acquireLock(lockPath: string, timeoutMs: number = LOCK_TIMEOUT_MS): voi
 				throw new Error(`Lock timeout after ${timeoutMs}ms waiting for ${path.basename(lockPath)}`);
 			}
 			// Busy-wait with Atomics.wait (CPU-efficient sleep).
-			Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, LOCK_POLL_MS);
+			Atomics.wait(LOCK_WAIT_BUF, 0, 0, LOCK_POLL_MS);
 		}
 	}
 }
@@ -392,11 +395,18 @@ function rebuildIndex(runsRoot: string): RunIndexEntry[] {
 		} catch { /* skip corrupt */ }
 	}
 
-	const result = Array.from(entries.values());
-	// Persist the rebuilt index under the index lock so it does not race a
-	// concurrent updateIndexEntry / cleanup write (M1).
-	withLock(indexLockPath(runsRoot), () => writeIndex(runsRoot, result));
-	return result;
+	const scanned = Array.from(entries.values());
+	// Persist the rebuilt index under the index lock. Re-read the current
+	// index inside the lock and merge by runId so concurrent writes are not
+	// clobbered — scanned entries win on conflict (Finding 5).
+	withLock(indexLockPath(runsRoot), () => {
+		const currentIndex = readIndex(runsRoot);
+		const merged = new Map<string, RunIndexEntry>();
+		for (const e of currentIndex) merged.set(e.runId, e);
+		for (const e of scanned) merged.set(e.runId, e); // scanned wins
+		writeIndex(runsRoot, Array.from(merged.values()));
+	});
+	return scanned;
 }
 
 // ---------------------------------------------------------------------------
@@ -422,7 +432,8 @@ function cleanupTerminalRuns(
 	maxKeep: number = DEFAULT_MAX_KEPT_TERMINAL,
 	maxAgeDays: number = DEFAULT_MAX_AGE_DAYS,
 ): void {
-	const now = Date.now();
+	const cleanupStarted = Date.now();
+	const now = cleanupStarted;
 	if (now - lastCleanupAt < CLEANUP_INTERVAL_MS) return;
 	lastCleanupAt = now;
 
@@ -473,6 +484,8 @@ function cleanupTerminalRuns(
 	// Delete run files + lock files (outside the index lock).
 	for (const e of toRemove) {
 		const filePath = path.join(runsRoot, e.relPath);
+		// Race guard: skip files modified after cleanup started (Finding 2).
+		try { if (fs.statSync(filePath).mtimeMs > cleanupStarted) continue; } catch { continue; }
 		try { fs.unlinkSync(filePath); } catch { /* already gone */ }
 		// Also remove any orphaned lock file.
 		try { fs.unlinkSync(filePath + ".lock"); } catch { /* ignore */ }
@@ -567,15 +580,17 @@ export function saveFlow(
 ): { filePath: string } {
 	const dir = scope === "user" ? userFlowsDir() : (findProjectFlowsDir(cwd, true) ?? path.join(cwd, ".pi", "taskflows"));
 	fs.mkdirSync(dir, { recursive: true });
-	const safe = def.name.replace(/[^\w.-]+/g, "_");
+	const safe = safeFlowDirName(def.name);
 	const filePath = path.join(dir, `${safe}.json`);
-	writeFileAtomic(filePath, `${JSON.stringify(def, null, 2)}\n`);
+	const fileLockPath = filePath + ".lock";
+	withLock(fileLockPath, () => { writeFileAtomic(filePath, `${JSON.stringify(def, null, 2)}\n`); });
 
-	// One-shot: let the user know we're creating a .pi/ directory on first save.
+	// One-shot: let the user know about .pi/ directory on first save (Finding 8).
 	if (!_piCreationHinted) {
 		_piCreationHinted = true;
+		const piExisted = fs.existsSync(path.join(dir, "..", ".."));
 		console.warn(
-			`[taskflow] Created .pi/taskflows/ for project-scoped flow storage. ` +
+			`[taskflow] ${piExisted ? "Using" : "Created"} .pi/taskflows/ for project-scoped flow storage. ` +
 			`Add .pi/ to .gitignore if desired.`,
 		);
 	}
@@ -614,6 +629,9 @@ export function newRunId(flowName: string): string {
  * caller's reference.
  */
 export function saveRun(state: RunState, cleanup?: { maxKeep?: number; maxAgeDays?: number }): void {
+	// Reject unsafe runIds before any filesystem access (Finding 1).
+	if (!validateRunId(state.runId)) return;
+
 	const root = runsDir(state.cwd);
 	const flowDir = flowRunDir(root, state.flowName);
 	fs.mkdirSync(flowDir, { recursive: true });

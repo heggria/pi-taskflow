@@ -235,7 +235,7 @@ const ArgSpecSchema = Type.Object(
 
 export const TaskflowSchema = Type.Object(
 	{
-		name: Type.String({ description: "Workflow name (becomes /tf:<name> command when saved)" }),
+		name: Type.String({ minLength: 1, description: "Workflow name (becomes /tf:<name> command when saved)" }),
 		description: Type.Optional(Type.String()),
 		version: Type.Optional(Type.Number({ default: 1 })),
 		args: Type.Optional(Type.Record(Type.String(), ArgSpecSchema, { description: "Declared invocation arguments" })),
