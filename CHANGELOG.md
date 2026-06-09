@@ -2,6 +2,34 @@
 
 All notable changes to pi-taskflow are documented here. This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 
+## [0.0.16] — 2026-06-09
+
+### Added
+- Built-in agents configurable via `/tf init` — customize model role, thinking level, and tools per agent.
+- Community PR support: `feat/configurable-builtin-agents` (thanks @yolonir).
+- Multi-language READMEs: 简体中文, हिन्दी, Español, العربية, বাংলা, Português, Русский.
+- `AGENTS.md` project guide — agent pipeline rules, review routing, executor selection, escalation paths.
+- GitHub issue templates (bug report + feature request) and PR template.
+
+### Changed
+- Social preview OG image for npm/ GitHub card.
+- Internal docs reorganized under `docs/internal/` for clean project root.
+- Run cleanup made configurable with `.pi/` creation notification.
+- npm tarball slimmed — only essential files shipped.
+
+### Tests
+- 10 previously uncovered critical code paths covered (runtime branches, interpolate edge cases, transient error heuristics, store concurrency).
+- Total: **524 tests** (was 394).
+
+## [0.0.15] — 2026-06-09
+
+### Added
+- Built-in agent auto-sync to project `.pi/agents/` — first-class community collaboration.
+- Tool description updated: `taskflow` now replaces `subagent` as the recommended delegation API.
+
+### Changed
+- Multi-language READMEs completed with >2% native-speaker coverage (7 languages).
+
 ## [0.0.14] — 2026-06-08
 
 ### Added

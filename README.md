@@ -8,7 +8,7 @@
   <a href="./LICENSE"><img src="https://img.shields.io/badge/license-MIT-43D9AD?style=flat-square" alt="MIT license"></a>
   <a href="#whats-inside"><img src="https://img.shields.io/badge/runtime%20deps-0-43D9AD?style=flat-square" alt="zero runtime dependencies"></a>
   <a href="https://github.com/heggria/pi-taskflow/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/heggria/pi-taskflow/ci.yml?branch=main&style=flat-square&label=CI" alt="CI status"></a>
-  <a href="#whats-inside"><img src="https://img.shields.io/badge/tests-394-6E8BFF?style=flat-square" alt="394 tests"></a>
+  <a href="#whats-inside"><img src="https://img.shields.io/badge/tests-524-6E8BFF?style=flat-square" alt="524 tests"></a>
   <a href="#whats-inside"><img src="https://img.shields.io/badge/dogfooded-%E2%9C%93-43D9AD?style=flat-square" alt="dogfooded"></a>
   <a href="https://pi.dev"><img src="https://img.shields.io/badge/for-Pi%20coding%20agent-B692FF?style=flat-square" alt="for the Pi coding agent"></a>
 </p>
@@ -587,7 +587,7 @@ Copy one into `.pi/taskflows/<name>.json` (or `~/.pi/agent/taskflows/`) and it r
 
 <div align="center">
 
-**0 runtime dependencies** · **394 tests** · **10 phase types** · **cross-session resume** · **cross-run memoization** · **~4.9k LOC runtime**
+**0 runtime dependencies** · **524 tests** · **9 phase types** · **cross-session resume** · **cross-run memoization** · **~4.9k LOC runtime**
 
 </div>
 
@@ -614,7 +614,7 @@ Our `self-improve` flow is a 10-phase DAG — it audits the codebase, patches de
 
 ## Status & limits
 
-**v0.0.13** — loop-until-done (`loop` phase: iterate to a condition, convergence, or cap), tournament (best-of-N with a judge), cross-run memoization (content-addressed cache with git/file/glob/env fingerprints and TTL), interactive `/tf init` with role-aware model pickers + diff preview + atomic merge-write, 18 built-in agents with 6 model roles. Full control-flow & reliability layer (`when` guards, `join: any`, `retry`/backoff, `approval`, `flow` composition, `budget` caps, idle watchdog) on top of the DSL + DAG runtime (`agent`/`parallel`/`map`/`gate`/`reduce`). Inline + saved flows, cross-session resume, live progress, and isolated context. A run executes as one streaming tool call.
+**v0.0.16** — loop-until-done (`loop` phase: iterate to a condition, convergence, or cap), tournament (best-of-N with a judge), cross-run memoization (content-addressed cache with git/file/glob/env fingerprints and TTL), interactive `/tf init` with role-aware model pickers + diff preview + atomic merge-write, configurable built-in agents, 18 built-in agents with 6 model roles. Full control-flow & reliability layer (`when` guards, `join: any`, `retry`/backoff, `approval`, `flow` composition, `budget` caps, idle watchdog) on top of the DSL + DAG runtime (`agent`/`parallel`/`map`/`gate`/`reduce`). Inline + saved flows, cross-session resume, live progress, and isolated context. A run executes as one streaming tool call.
 
 Known boundaries (tracked, bounded — no surprises mid-flow):
 
