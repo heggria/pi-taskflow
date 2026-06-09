@@ -1,0 +1,93 @@
+<svg width="1000" height="430" viewBox="0 0 1000 430" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="work is a fluid imperative script you cannot verify; a taskflow is a declarative graph of discrete, statically-verifiable task nodes">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1000" y2="430" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#0A0E18"/><stop offset="1" stop-color="#0C1120"/>
+    </linearGradient>
+    <radialGradient id="gw" cx="0" cy="0" r="1" gradientTransform="translate(250 230) scale(320 240)">
+      <stop offset="0" stop-color="#C2723A" stop-opacity="0.13"/><stop offset="1" stop-color="#C2723A" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="gt" cx="0" cy="0" r="1" gradientTransform="translate(740 230) scale(340 250)">
+      <stop offset="0" stop-color="#43D9AD" stop-opacity="0.16"/><stop offset="1" stop-color="#43D9AD" stop-opacity="0"/>
+    </radialGradient>
+    <pattern id="dots" width="30" height="30" patternUnits="userSpaceOnUse"><circle cx="1.5" cy="1.5" r="1.5" fill="#9FB0FF" fill-opacity="0.035"/></pattern>
+    <linearGradient id="edge" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#6E8BFF"/><stop offset="1" stop-color="#A78BFA"/></linearGradient>
+    <filter id="glow" x="-40%" y="-40%" width="180%" height="180%"><feGaussianBlur stdDeviation="4" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  </defs>
+
+  <rect x="1" y="1" width="998" height="428" rx="22" fill="url(#bg)"/>
+  <rect x="1" y="1" width="998" height="428" rx="22" fill="url(#dots)"/>
+  <rect x="1" y="1" width="998" height="428" rx="22" fill="url(#gw)"/>
+  <rect x="1" y="1" width="998" height="428" rx="22" fill="url(#gt)"/>
+  <rect x="1.5" y="1.5" width="997" height="427" rx="21.5" stroke="#283357" stroke-opacity="0.5"/>
+
+  <!-- divider -->
+  <line x1="500" y1="40" x2="500" y2="390" stroke="#2A3556" stroke-dasharray="4 5"/>
+
+  <!-- ============ LEFT: work (imperative, fluid, unverifiable) ============ -->
+  <text x="250" y="56" text-anchor="middle" font-family="ui-monospace,Menlo,monospace" font-size="22" font-weight="700" fill="#E0A36A">work</text>
+  <text x="250" y="80" text-anchor="middle" font-family="system-ui,Helvetica,Arial,sans-serif" font-size="13" fill="#9C8B79">fluid · imperative · a script that flows</text>
+
+  <!-- a code-mode script block -->
+  <rect x="60" y="104" width="380" height="158" rx="12" fill="#140F0A" stroke="#5A4226"/>
+  <g font-family="ui-monospace,Menlo,monospace" font-size="12.5" fill="#C9B79E">
+    <text x="80" y="132"><tspan fill="#8C7A66">// the model writes JS, and runs it</tspan></text>
+    <text x="80" y="156"><tspan fill="#D98A4A">const</tspan> f = <tspan fill="#E0A36A">await</tspan> agent(<tspan fill="#9C8B79">'list files'</tspan>)</text>
+    <text x="80" y="180"><tspan fill="#D98A4A">for</tspan> (<tspan fill="#D98A4A">const</tspan> x <tspan fill="#D98A4A">of</tspan> JSON.parse(f)) {</text>
+    <text x="100" y="204">  <tspan fill="#E0A36A">await</tspan> agent(`audit ${x}`)</text>
+    <text x="80" y="228">}</text>
+    <text x="80" y="252"><tspan fill="#8C7A66">// the graph hides in control flow</tspan></text>
+  </g>
+
+  <!-- "can't verify" stamp -->
+  <g font-family="ui-monospace,Menlo,monospace" font-size="11">
+    <rect x="86" y="290" width="328" height="62" rx="10" fill="#1A1109" stroke="#6E4324"/>
+    <text x="250" y="313" text-anchor="middle" fill="#E8915A" font-weight="600">✗ can't verify before it runs</text>
+    <text x="250" y="334" text-anchor="middle" fill="#9C8B79" font-size="10.5">Turing-complete · loops only known at runtime</text>
+  </g>
+
+  <!-- ============ RIGHT: taskflow (declarative graph of discrete task nodes) ============ -->
+  <text x="745" y="56" text-anchor="middle" font-family="ui-monospace,Menlo,monospace" font-size="22" font-weight="700" fill="#7FE3C4">taskflow</text>
+  <text x="745" y="80" text-anchor="middle" font-family="system-ui,Helvetica,Arial,sans-serif" font-size="13" fill="#7BA899">discrete · declarative · a graph of tasks</text>
+
+  <!-- edges (drawn first) -->
+  <g stroke="url(#edge)" stroke-width="2.2" fill="none" stroke-linecap="round">
+    <path d="M606 150 C636 150, 642 130, 672 130"/>
+    <path d="M606 150 C636 150, 642 170, 672 170"/>
+    <path d="M606 150 C636 150, 642 210, 672 210"/>
+    <path d="M770 130 C800 130, 806 168, 836 168"/>
+    <path d="M770 170 C800 170, 806 168, 836 168"/>
+    <path d="M770 210 C800 210, 806 168, 836 168"/>
+  </g>
+  <g fill="#A78BFA"><path d="M672 130 l-8 -4.5 v9 z"/><path d="M672 170 l-8 -4.5 v9 z"/><path d="M672 210 l-8 -4.5 v9 z"/></g>
+  <g fill="#6E8BFF"><path d="M836 168 l-8 -4.5 v9 z"/></g>
+
+  <!-- node: source -->
+  <rect x="538" y="130" width="70" height="42" rx="10" fill="#121A2C" stroke="#33406B"/>
+  <text x="573" y="151" text-anchor="middle" font-family="ui-monospace,Menlo,monospace" font-size="11.5" font-weight="700" fill="#E7ECF7">scan</text>
+  <text x="573" y="165" text-anchor="middle" font-family="ui-monospace,Menlo,monospace" font-size="8" fill="#8C99C0">agent</text>
+
+  <!-- 3 map nodes -->
+  <g font-family="ui-monospace,Menlo,monospace">
+    <rect x="674" y="112" width="96" height="36" rx="9" fill="#131A2E" stroke="#3A3463"/>
+    <text x="690" y="134" font-size="11" font-weight="700" fill="#E7ECF7">audit·a</text>
+    <rect x="674" y="152" width="96" height="36" rx="9" fill="#131A2E" stroke="#3A3463"/>
+    <text x="690" y="174" font-size="11" font-weight="700" fill="#E7ECF7">audit·b</text>
+    <rect x="674" y="192" width="96" height="36" rx="9" fill="#131A2E" stroke="#3A3463"/>
+    <text x="690" y="214" font-size="11" font-weight="700" fill="#E7ECF7">audit·c</text>
+  </g>
+
+  <!-- gate fan-in -->
+  <rect x="838" y="146" width="84" height="44" rx="10" fill="#0E2A20" stroke="#43D9AD" filter="url(#glow)"/>
+  <text x="880" y="167" text-anchor="middle" font-family="ui-monospace,Menlo,monospace" font-size="11.5" font-weight="700" fill="#EAFBF4">gate</text>
+  <text x="880" y="181" text-anchor="middle" font-family="ui-monospace,Menlo,monospace" font-size="8" fill="#6FD6B6">VERDICT</text>
+
+  <!-- "verified" stamp -->
+  <g font-family="ui-monospace,Menlo,monospace" font-size="11">
+    <rect x="586" y="290" width="328" height="62" rx="10" fill="#0A1F17" stroke="#2B775D"/>
+    <text x="750" y="313" text-anchor="middle" fill="#7FE3C4" font-weight="600">✓ statically verified before any token</text>
+    <text x="750" y="334" text-anchor="middle" fill="#7BA899" font-size="10.5">no cycles · budget · dead-ends — all checked</text>
+  </g>
+
+  <!-- bottom line -->
+  <text x="500" y="402" text-anchor="middle" font-family="system-ui,Helvetica,Arial,sans-serif" font-size="13.5" fill="#A6B0CC">A <tspan fill="#E0A36A" font-weight="600">workflow</tspan> runs your work. A <tspan fill="#7FE3C4" font-weight="600">taskflow</tspan> declares it as a graph you can check, see, save, and replay.</text>
+</svg>

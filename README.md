@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="./assets/hero.png" alt="pi-taskflow — declarative DAG orchestration for Pi subagents: stateful, resumable, context-isolated" width="900">
+<img src="./assets/hero.png" alt="pi-taskflow — a declarative, verifiable graph of task nodes for Pi subagents: stateful, resumable, context-isolated" width="900">
 
 <p>
   <a href="https://www.npmjs.com/package/pi-taskflow"><img src="https://img.shields.io/npm/v/pi-taskflow?style=flat-square&color=B692FF&label=npm" alt="npm version"></a>
@@ -24,8 +24,8 @@
   <a href="./docs/i18n/README.ru.md">Русский</a>
 </p>
 
-<p><strong>Declarative DAG orchestration for <a href="https://pi.dev">Pi</a> subagents.</strong><br/>
-Fan out · gate · resume · save as a command — intermediate results stay out of your context.</p>
+<p><strong>A declarative, verifiable <em>graph of tasks</em> for <a href="https://pi.dev">Pi</a> subagents.</strong><br/>
+Not a workflow you script — a DAG you declare. Fan out · gate · resume · save as a command — intermediate results stay out of your context.</p>
 
 ```bash
 pi install npm:pi-taskflow
@@ -35,23 +35,38 @@ pi install npm:pi-taskflow
 
 ---
 
-**Subagents are fire-and-forget. Taskflows fire, fan out, pause, gate, resume, and save themselves as a command.**
+**A `workflow` flows. A `taskflow` is a *graph*.** Other orchestrators let the model *script* the work — imperative code that flows step by step, with the graph hidden inside control flow. `pi-taskflow` does the opposite: you **declare** the work as a graph of discrete, named **task** nodes connected by `dependsOn` edges — and the runtime *verifies that graph before it spends a single token.*
 
 You already know the built-in subagent tool's `task` / `tasks` / `chain`. `pi-taskflow` speaks the *same* shorthand — so your existing delegations instantly become **tracked, resumable, and saveable as a one-word `/tf:<name>` command**. When you outgrow the shorthand, the full DSL gives you a real DAG: dynamic fan-out over dozens of items, conditional routing, quality gates, human approvals, retries, and a hard spend ceiling.
 
 And the whole time, **only the final phase reaches your conversation.** Every intermediate transcript stays in the runtime, never your context window.
 
+## Why "taskflow" and not "workflow"?
+
+The name is the thesis. In engineering, a **task** is a *discrete, declared unit of work* — the node of a task graph (the same `task` a build system, scheduler, or compiler wires into a DAG). **Work**, by contrast, is *fluid and unbounded* — the continuous, imperative act of doing.
+
+That distinction is exactly the design split in the Pi ecosystem:
+
+<div align="center">
+<img src="./assets/task-vs-work.png" alt="work is a fluid imperative script whose graph hides in control flow and can't be verified before it runs; a taskflow is a declarative graph of discrete task nodes that is statically verified before any token is spent" width="900">
+</div>
+
+- A **`workflow`** (the dynamic, code-mode kind) is the model writing an **imperative script** that *flows*: `await agent(...)`, an `if`, a `for`, another `await`. Expressive — it's Turing-complete — but the graph only exists *as the code runs*. You can't see it, diff it, or prove it terminates before you pay for it.
+- A **`taskflow`** moves the plan **out of code and into a declarative graph of `task` nodes.** Because the graph is *data*, the runtime can do what an imperative script structurally cannot: **statically verify it** (no cycles, no dead ends, no budget overflow, no dangling refs) before a single subagent spawns, **render it** (the live progress *is* the DAG), **resume it** phase-by-phase, and **save it** as a one-word command.
+
+> **The trade we make on purpose:** we give up the raw expressivity of arbitrary code to gain something an imperative script can't have — a graph that is **verifiable, observable, replayable, and safe to generate with an LLM.** When a job needs twelve steps with branching fan-out and a review gate, you want a graph you can *check* — not a script you *hope* runs right.
+
 ## Why this exists
 
-Here's the wall you hit with raw subagents: you describe a multi-step plan in prose, the model re-derives it every single run, the intermediate transcripts flood your context, and the moment one model call fails you start over from zero. There's no reuse, no recovery, no structure.
+Here's the wall you hit with raw subagents: you describe a multi-step plan in prose, the model re-derives it every single run, the intermediate transcripts flood your context, and the moment one model call fails you start over from zero. There's no reuse, no recovery, no structure — and no way to *check* the plan before it burns tokens.
 
-`pi-taskflow` moves the plan **out of the prompt and into a declarative definition.** The runtime owns the DAG, the loops, the retries, and the intermediate state. You declare a pipeline once and run it a hundred times — by name.
+`pi-taskflow` moves the plan **out of the prompt and into a declarative graph of task nodes.** The runtime owns the DAG, the loops, the retries, and the intermediate state. You declare a pipeline once and run it a hundred times — by name. Because the plan is data, not prose and not code, it can be **validated, visualized, and replayed.**
 
 <div align="center">
 <img src="./assets/context-isolation.png" alt="With raw subagents every transcript floods your context; with pi-taskflow transcripts stay in the runtime and only the final result returns" width="900">
 </div>
 
-> When a job needs twelve steps with branching fan-out and a review gate, you want orchestration — not lucky prompting.
+> Twelve steps, branching fan-out, a review gate, a spend cap — that's a graph, and you want to *see and check* it, not re-prompt it every run.
 
 | | subagent (built-in) | **pi-taskflow** |
 |---|---|---|
@@ -70,7 +85,23 @@ Here's the wall you hit with raw subagents: you describe a multi-step plan in pr
 | **Live progress** | opaque while running | **live DAG render with timing + cost** |
 | **Ergonomics** | inline JSON each time | **shorthand (`task`/`tasks`/`chain`) *or* DSL** |
 
-It doesn't replace the subagent tool. It gives your subagents a DAG, a memory, and a name.
+It doesn't replace the subagent tool. It gives your subagents a **graph**, a memory, and a name.
+
+## Declarative graph vs. imperative script
+
+The closest thing to `pi-taskflow` in spirit is the **dynamic / code-mode workflow** — where the model writes a JavaScript orchestration script. It's powerful and genuinely expressive. But it sits at the *opposite* end of one fundamental axis: **expressivity vs. verifiability.**
+
+| | dynamic `workflow` (code-mode) | **`pi-taskflow`** (declarative graph) |
+|---|---|---|
+| **The plan is** | imperative JS the model writes & runs | **declarative JSON data the runtime executes** |
+| **The graph** | implicit — hidden in `if`/`for`/`await` control flow | **explicit — `phases[]` + `dependsOn` edges, a first-class object** |
+| **Verify before running** | ✗ Turing-complete; can't prove it terminates | **✓ static checks: no cycles, dead-ends, budget overflow, dangling refs** |
+| **See it** | ✗ the graph only exists as the code runs | **✓ the live progress render *is* the DAG** |
+| **Resume** | coarse (call-cache dedup) | **✓ phase-by-phase input-hash resume, cross-session** |
+| **Safe to LLM-generate** | risky — it's executable code | **✓ it's just data — no `eval`, no arbitrary execution** |
+| **Expressivity ceiling** | **higher** — arbitrary control flow | bounded by the DSL (but `map`/`when`/`loop`/`gate` cover most jobs) |
+
+We chose the **verifiable** side on purpose. The expressivity you give up is real; what you get back — a plan you can check, watch, replay, and safely let a model author — is what turns one-off prompting into durable orchestration.
 
 ## Compared to other Pi extensions
 
@@ -95,12 +126,12 @@ The Pi ecosystem now has **20+ delegation, workflow, and orchestration extension
 
 - **`@pi-agents/orchid`** is the most feature-complete orchestrator in the ecosystem (DAG + worktrees + Ralph loop + agent mailbox) — but its DSL is a *fixed* 9-phase pipeline, it carries runtime deps + jiti, and it's beta. Reach for `pi-taskflow` when you want to **define your own graph** (not adopt an opinionated one) with **zero dependencies** and a one-command install.
 - **`pi-crew` / `ultimate-pi`** go heavier — worktree isolation, durable async teams, multi-tier governance. If you want lightweight, declarative, and zero-dependency, that's this project.
-- **`@zhushanwen/pi-workflow`** is the closest in spirit and also zero-dep, but you author workflows as **JavaScript scripts**. `pi-taskflow`'s **declarative JSON DSL** is safer and more auditable, and its **phase-level input-hash resume** is more granular than call-cache dedup.
+- **`@zhushanwen/pi-workflow`** is the closest in spirit and also zero-dep, but it's the **imperative** side of the split above: you author workflows as **JavaScript scripts** the model writes and runs. `pi-taskflow`'s **declarative JSON DAG** is the verifiable side — statically checkable, visualizable, safe to LLM-generate, and resumable at phase granularity rather than call-cache dedup.
 - **`@fiale-plus/pi-rogue-orchestration`** has a real **loop-until-done** (a feature `pi-taskflow` doesn't yet have). If your job is "keep going until the goal is met," it's worth a look; `pi-taskflow` is for *structured, branching* pipelines instead.
 - **`pi-subagents` / `@gotgenes/pi-subagents`** are the mature picks for ad-hoc "use reviewer on this diff" delegation and background jobs. `pi-taskflow` is for when those delegations need to become a *repeatable, resumable pipeline*.
 - **`pi-pipeline` / `pi-agent-flow`** ship *opinionated, fixed* flows. `pi-taskflow` ships an *empty canvas*: you (or the model) declare the graph that fits the job.
 
-> The honest one-liner: **`pi-taskflow` is the only Pi extension that gives you a declarative, resumable, DAG-shaped subagent pipeline you save as a one-word command — with zero runtime dependencies and context isolation by design.** The known gaps it's closing next: loop-until-done, worktree isolation, and non-blocking background runs (see [`STRATEGY.md`](./STRATEGY.md)).
+> The honest one-liner: **`pi-taskflow` is the only Pi extension that gives you a *declarative, verifiable, resumable* DAG of task nodes — saved as a one-word command, with zero runtime dependencies and context isolation by design.** Where code-mode workflows let the model *script* the work, `pi-taskflow` lets it *declare a graph the runtime can prove correct before running.* The known gaps it's closing next: loop-until-done, worktree isolation, and non-blocking background runs (see [`STRATEGY.md`](./STRATEGY.md)).
 
 ## 30-second start
 

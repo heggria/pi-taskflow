@@ -1,5 +1,5 @@
 /**
- * pi-taskflow — lightweight workflow orchestration for the Pi coding agent.
+ * pi-taskflow — a declarative, verifiable graph of task nodes for the Pi coding agent.
  *
  * Registers:
  *   - tool `taskflow`        : run inline / saved flows, save, resume (LLM-callable)
@@ -325,7 +325,7 @@ export default function (pi: ExtensionAPI) {
 			"Interpolation: {args.X}, {steps.ID.output}, {steps.ID.json}, {item} (map), {previous.output}.",
 		].join(" "),
 		parameters: TaskflowParams,
-		promptSnippet: "Orchestrate subagents — single, parallel, chain, or DAG — with tracking, resume, and context isolation. Replaces the subagent tool.",
+		promptSnippet: "Declare a verifiable graph of subagent tasks (single, parallel, chain, or full DAG) — tracked, resumable, context-isolated. The runtime validates the graph before running. Replaces the subagent tool.",
 		promptGuidelines: [
 			"BEFORE FIRST USE: invoke skill_load('taskflow') to read the full skill documentation (DSL syntax, phase types, examples, best practices). This tool description is a condensed reference only — the skill is the authoritative guide.\n\nUse taskflow for ALL delegation — single tasks, parallel, chain, or full DAG orchestration. It fully replaces the subagent tool: every delegation is tracked with a runId, resumable across sessions, context-isolated (only final output returns), and saveable as /tf:<name>. Do NOT call the subagent tool directly; use taskflow shorthand (task/tasks/chain) for simple cases instead.",
 			"For complex multi-phase work (explore / 审计 / analyze the project, auditing endpoints, reviewing or migrating many files/modules, cross-checked research), use the full DSL with phases. For taskflow map phases, have the upstream phase emit a JSON array and set output:'json'.",
