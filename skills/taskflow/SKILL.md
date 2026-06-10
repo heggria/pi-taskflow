@@ -88,6 +88,8 @@ Call the `taskflow` tool. To run a brand-new flow you write inline, pass
 | `reduce` | aggregate `from[]` phases into one output |
 | `approval` | **human-in-the-loop** pause: ask a person to approve / reject / edit before continuing |
 | `flow` | run a **sub-flow** as one phase — **saved** (`use`) or **runtime-generated** (`def`) |
+| `loop` | repeat a body until a condition / convergence / `maxIterations` (see below) |
+| `tournament` | run N competing `variants`, a `judge` picks the best or aggregates (see below) |
 
 ### Control-flow fields (any phase)
 
@@ -100,7 +102,9 @@ Call the `taskflow` tool. To run a brand-new flow you write inline, pass
 ### Conditional routing (when + gate/branches)
 
 Pair `when` with an upstream phase that emits a decision to build real if/else
-routing. Use `join: "any"` on the merge phase so it runs whichever branch fired:
+routing. Use `join: "any"` on the merge phase so it runs whichever branch fired. For
+static (non-conditional) concurrency, a `parallel` phase runs fixed `branches[]`
+instead — `{ "type": "parallel", "branches": [{"task":"..."}, {"task":"...","agent":"reviewer"}] }`.
 
 ```jsonc
 { "id": "triage", "type": "agent", "agent": "analyst", "output": "json",
@@ -176,6 +180,62 @@ so round N's plan depends on round N-1's **result** (not a one-shot fan-out):
 the declarative equivalent of `for (...) { read result; decide next }`. See
 `examples/dynamic-plan-execute.json` and `examples/iterative-replan.json`.
 
+### Loop phases (iterate until done)
+
+A `loop` phase runs its body repeatedly, exposing each iteration's output as
+`{steps.<thisId>.output}` / `.json` so the next round can react to the last. It
+stops on the first of: `until` truthy, **convergence** (output stops changing),
+or `maxIterations` (hard cap). This is the declarative "keep going until good
+enough" — the runtime always terminates (the cap is mandatory).
+
+- `until` — stop condition, same operators as `when` (a parse error stops the loop, fail-safe).
+- `maxIterations` — hard iteration cap (required to bound the loop).
+- `convergence` — `true` to stop early when an iteration's output equals the previous one.
+
+```jsonc
+{
+  "id": "refine",
+  "type": "loop",
+  "agent": "executor",
+  "maxIterations": 5,
+  "until": "{steps.refine.json.done} == true",
+  "convergence": true,
+  "task": "Improve the draft. When nothing else needs fixing, output JSON {\"done\":true,\"draft\":\"...\"}; otherwise {\"done\":false,\"draft\":\"...\"}.",
+  "output": "json",
+  "final": true
+}
+```
+
+For data-dependent **replanning** each round, pair a `loop` body that emits a
+plan with `flow{def}` (see Sub-flows above). See `examples/iterative-replan.json`.
+
+### Tournament phases (N variants, judge picks best)
+
+A `tournament` phase runs `variants` competing attempts in parallel, then a
+**judge** sub-phase selects the winner (`mode: "best"`) or merges them
+(`mode: "aggregate"`). Use it when one shot is unreliable and you want the best
+of several drafts, or a synthesis of diverse approaches.
+
+- `variants` — the competing attempts: a number (run the same `task` N times) or an array of `{task, agent?}` for genuinely different approaches.
+- `mode` — `"best"` (judge picks one winner, default) or `"aggregate"` (judge merges all into one output).
+- `judge` — the judge's rubric/instructions (how to choose or merge).
+- `judgeAgent` — *(optional)* the agent that runs the judge step; defaults to the phase `agent`.
+- Fail-open: if the judge's pick is unparseable, variant 1 is returned (work is never lost).
+
+```jsonc
+{
+  "id": "headline",
+  "type": "tournament",
+  "agent": "executor",
+  "variants": 3,
+  "mode": "best",
+  "judge": "Pick the clearest, most accurate headline. End with: WINNER: <n>.",
+  "task": "Write one headline for the article below.\n\n{steps.draft.output}",
+  "dependsOn": ["draft"],
+  "final": true
+}
+```
+
 ### Budget (cost / token caps)
 
 Add a run-wide ceiling at the top level. When accumulated cost/tokens exceed it,
@@ -204,6 +264,30 @@ Review the audit results below. If any endpoint is missing auth, end with
 "VERDICT: BLOCK" and a one-line reason; otherwise end with "VERDICT: PASS".
 
 {steps.audit.output}
+```
+
+**Zero-token machine checks (`eval`).** Before spending a token on the LLM gate,
+list machine-checkable assertions in `eval`. If **all** pass, the gate
+auto-passes with **no LLM call**; if any fails, it falls through to the LLM
+`task` (the qualitative residue). Each entry supports the `when` operators plus
+`X contains Y` (substring). A parse error fails **open** (consistent with the
+gate invariant).
+
+```jsonc
+{ "id": "quality", "type": "gate", "dependsOn": ["build","test"],
+  "eval": ["{steps.build.output} contains BUILD SUCCESS", "{steps.test.json.failures} == 0"],
+  "task": "Review the diff for subtle logic errors a linter can't catch. VERDICT: PASS or BLOCK." }
+```
+
+**Self-healing (`onBlock: "retry"`).** By default a blocking gate halts the run
+(`onBlock: "halt"`). With `onBlock: "retry"` the gate instead **re-runs its
+upstream `dependsOn` phases and re-evaluates**, up to `retry.max` rounds (or
+until PASS / budget / abort) — a generate→critique→regenerate rework loop.
+
+```jsonc
+{ "id": "spec-gate", "type": "gate", "onBlock": "retry", "retry": { "max": 3 },
+  "dependsOn": ["implement"],
+  "task": "Does the implementation satisfy ALL acceptance criteria? VERDICT: PASS or BLOCK with reasons." }
 ```
 
 ### Structured-verify phases (v0.0.8.1)
@@ -343,7 +427,8 @@ variables, and storage paths — read `configuration.md` (next to this file).
 Quick reference:
 
 - **Flow:** `name`, `description`, `concurrency` (default 8), `budget` (`maxUSD`/`maxTokens`), `agentScope` (user|project|both), `args`, `strictInterpolation`.
-- **Phase:** `model`, `thinking`, `tools` (whitelist), `cwd`, `output:"json"`, `concurrency` (map/parallel fan-out), `when`, `join` (all|any), `retry`, `use`/`with` (flow), `final`.
+- **Phase:** `model`, `thinking`, `tools` (whitelist), `cwd`, `output:"json"`, `concurrency` (map/parallel fan-out), `when`, `join` (all|any), `retry`, `use`/`with` (flow), `optional` (fail-soft — a failed/blocked phase won't abort the run), `final`.
+- **Cross-run caching:** add `cache: { "scope": "cross-run" }` to a phase to memoize its output across runs (same input → instant reuse, zero tokens). See `configuration.md` for `ttl`, `fingerprint` (git/glob/file/env invalidation), and scope options.
 - **Precedence (model/thinking/tools):** phase value → agent frontmatter (resolved via `modelRoles`) → global/default.
 - **Concurrency:** same-layer phases use `flow.concurrency`; a `map`/`parallel` phase uses `phase.concurrency ?? flow.concurrency ?? 8`.
 
