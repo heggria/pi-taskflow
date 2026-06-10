@@ -2,6 +2,20 @@
 
 All notable changes to pi-taskflow are documented here. This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 
+## [0.0.20] — 2026-06-10
+
+### Added
+- **Background (detached) execution — `detach: true`.** Run a taskflow in a detached child process without blocking the current session. Pass `detach: true` and get a `runId` back immediately; the flow executes in the background, persisting state to the store. Status polled via `/tf runs` and `resume` works as normal.
+  - `extensions/detached-runner.ts` (new): lightweight child-process entry script — reads serialized context, calls `executeTaskflow`, persists terminal state.
+  - `extensions/index.ts`: `detach: Boolean` parameter on the taskflow tool + child-process spawn logic (records PID in `RunState`).
+  - `extensions/store.ts`: `RunState` gains `pid?: number` + `detached?: boolean` fields; `isProcessAlive(pid)` stale-PID helper.
+  - Design: entry-point spawn wrapper — zero changes to the 1340-line `runtime.ts` core, no new phase type, no DSL version bump, fully backward-compatible.
+  - Approval phases auto-reject in background mode. Idle watchdog kills stalled children. Stale PID detection via signal-0 probe.
+  - 8 new tests (`test/detached.test.ts`): process-alive, PID persistence, end-to-end detached, crash→failed, resume after failure, stale PID, backward compat.
+
+### Fixed
+- `approvalView` initialization robustness: throws a clear error when the approval view module is unavailable, preventing silent failures in detached/background mode.
+
 ## [0.0.19] — 2026-06-10
 
 ### Documentation
