@@ -40,6 +40,19 @@ function isResumable(r: RunState): boolean {
 	return r.status === "paused" || r.status === "failed";
 }
 
+/** Detect whether a refreshed run list differs from the current one in any way
+ * the panel renders (status, updatedAt, phase progress, membership). */
+function hasChanged(prev: RunState[], next: RunState[]): boolean {
+	if (prev.length !== next.length) return true;
+	const byId = new Map(prev.map((r) => [r.runId, r]));
+	for (const n of next) {
+		const p = byId.get(n.runId);
+		if (!p) return true;
+		if (p.status !== n.status || p.updatedAt !== n.updatedAt) return true;
+	}
+	return false;
+}
+
 export class RunHistoryComponent {
 	private runs: RunState[];
 	private theme: Theme;
@@ -48,14 +61,62 @@ export class RunHistoryComponent {
 	private mode: "list" | "detail" = "list";
 	private cachedWidth?: number;
 	private cachedLines?: string[];
+	/** Live-refresh wiring: re-read run state from disk while the panel is open
+	 * so background (detached) runs show live progress without reopening. */
+	private timer?: ReturnType<typeof setInterval>;
+	private refresh?: () => RunState[];
+	private requestRender?: () => void;
 
-	constructor(runs: RunState[], theme: Theme, onDone: (result?: RunHistoryResult) => void) {
+	constructor(
+		runs: RunState[],
+		theme: Theme,
+		onDone: (result?: RunHistoryResult) => void,
+		/** Optional live-refresh hooks. When both are provided the panel polls
+		 * `refresh()` on an interval and calls `requestRender()` if anything changed. */
+		live?: { refresh: () => RunState[]; requestRender: () => void; intervalMs?: number },
+	) {
 		if (!runs.length) {
 			throw new Error("RunHistoryComponent requires at least one run");
 		}
 		this.runs = runs;
 		this.theme = theme;
 		this.onDone = onDone;
+		if (live) {
+			this.refresh = live.refresh;
+			this.requestRender = live.requestRender;
+			const intervalMs = Math.max(250, live.intervalMs ?? 1000);
+			this.timer = setInterval(() => this.poll(), intervalMs);
+			// Don't keep the event loop alive just for the panel refresh.
+			(this.timer as { unref?: () => void }).unref?.();
+		}
+	}
+
+	/** Re-read run state; if anything changed, refresh the cached render. */
+	private poll(): void {
+		if (!this.refresh) return;
+		let next: RunState[];
+		try {
+			next = this.refresh();
+		} catch {
+			return; // transient read/lock error — try again next tick
+		}
+		if (!next.length) return;
+		if (!hasChanged(this.runs, next)) return;
+		// Preserve the user's selection by runId across refreshes.
+		const selectedId = this.runs[this.selected]?.runId;
+		this.runs = next;
+		const idx = next.findIndex((r) => r.runId === selectedId);
+		this.selected = idx >= 0 ? idx : Math.min(this.selected, next.length - 1);
+		this.invalidate();
+		this.requestRender?.();
+	}
+
+	/** Stop the refresh timer when the panel closes. */
+	dispose(): void {
+		if (this.timer) {
+			clearInterval(this.timer);
+			this.timer = undefined;
+		}
 	}
 
 	handleInput(data: string): void {
@@ -104,7 +165,8 @@ export class RunHistoryComponent {
 			for (const l of renderProgress(run, th).split("\n")) lines.push(truncateToWidth(l, width));
 			lines.push("");
 			const hint = isResumable(run) ? "Esc back · r resume" : "Esc back";
-			lines.push(truncateToWidth(`  ${th.fg("dim", hint)}`, width));
+			const liveTag = this.timer && run.status === "running" ? th.fg("success", " ● live") : "";
+			lines.push(truncateToWidth(`  ${th.fg("dim", hint)}${liveTag}`, width));
 			lines.push("");
 			this.cachedWidth = width;
 			this.cachedLines = lines;
@@ -129,7 +191,11 @@ export class RunHistoryComponent {
 		});
 
 		lines.push("");
-		lines.push(truncateToWidth(`  ${th.fg("dim", "↑↓ select · Enter details · r resume · q close")}`, width));
+		const anyRunning = this.runs.some((r) => r.status === "running");
+		const liveHint = this.timer && anyRunning ? th.fg("success", " ● live") : "";
+		lines.push(
+			truncateToWidth(`  ${th.fg("dim", "↑↓ select · Enter details · r resume · q close")}${liveHint}`, width),
+		);
 		lines.push("");
 
 		this.cachedWidth = width;

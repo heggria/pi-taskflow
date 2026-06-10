@@ -798,8 +798,13 @@ export default function (pi: ExtensionAPI) {
 					);
 					return;
 				}
-				const result = await ctx.ui.custom<RunHistoryResult | undefined>((_tui, theme, _kb, done) => {
-					return new RunHistoryComponent(runs, theme, (r) => done(r));
+				const result = await ctx.ui.custom<RunHistoryResult | undefined>((tui, theme, _kb, done) => {
+					const comp = new RunHistoryComponent(runs, theme, (r) => done(r), {
+						refresh: () => listRuns(ctx.cwd, 50),
+						requestRender: () => tui.requestRender(),
+						intervalMs: 1000,
+					});
+					return comp;
 				});
 				if (result?.action === "resume") {
 					if (ctx.isIdle()) {
