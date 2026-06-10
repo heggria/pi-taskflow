@@ -111,6 +111,11 @@ const TaskflowParams = Type.Object({
 				"Destructive: overwrites modelRoles in settings.json. Required for mode='apply-defaults'.",
 		}),
 	),
+	detach: Type.Optional(
+		Type.Boolean({
+			description: "Run in background (detached child process); return runId immediately. Status polled via store.",
+		}),
+	),
 });
 
 function makeRunState(def: Taskflow, args: Record<string, unknown>, cwd: string): RunState {
@@ -167,33 +172,49 @@ async function runFlow(
 	}
 
 	// Human-in-the-loop approver — only when an interactive UI is available.
-	// Renders a scrollable view so long upstream output (e.g. a plan) can be
-	// reviewed in full before deciding (↑↓/PgUp/PgDn to scroll).
+	// Renders a centered modal popup (TUI overlay) with a scrollable viewport
+	// so long upstream output (e.g. a plan) can be reviewed in full before
+	// deciding (mouse wheel / ↑↓ / PgUp / PgDn to scroll).
 	const requestApproval = ctx.hasUI
 		? async (req: ApprovalRequest): Promise<ApprovalDecision> => {
-				const choice = await ctx.ui.custom<ApprovalChoice>((tui, theme, _kb, done) => {
-					const view = new ApprovalViewComponent(
-						theme,
-						{
-							title: `Taskflow approval — ${def.name}/${req.phaseId}`,
-							message: req.message,
-							upstream: req.upstream,
+				const choice = await ctx.ui.custom<ApprovalChoice>(
+					(tui, theme, _kb, done) => {
+						const view = new ApprovalViewComponent(
+							theme,
+							{
+								title: `Taskflow approval — ${def.name}/${req.phaseId}`,
+								message: req.message,
+								upstream: req.upstream,
+							},
+							done,
+							() => tui.terminal.rows,
+							tui.terminal,
+						);
+						const onAbort = () => done("reject");
+						signal?.addEventListener("abort", onAbort, { once: true });
+						return {
+							render: (w: number) => view.render(w),
+							invalidate: () => view.invalidate(),
+							handleInput: (data: string) => {
+								view.handleInput(data);
+								tui.requestRender();
+							},
+							dispose: () => {
+								view.dispose();
+								signal?.removeEventListener("abort", onAbort);
+							},
+						};
+					},
+					{
+						overlay: true,
+						overlayOptions: {
+							width: "80%",
+							minWidth: 60,
+							maxHeight: "85%",
+							anchor: "center",
 						},
-						done,
-						() => tui.terminal.rows,
-					);
-					const onAbort = () => done("reject");
-					signal?.addEventListener("abort", onAbort, { once: true });
-					return {
-						render: (w: number) => view.render(w),
-						invalidate: () => view.invalidate(),
-						handleInput: (data: string) => {
-							view.handleInput(data);
-							tui.requestRender();
-						},
-						dispose: () => signal?.removeEventListener("abort", onAbort),
-					};
-				});
+					},
+				);
 				if (choice === "reject") return { decision: "reject" };
 				if (choice === "edit") {
 					const note = await ctx.ui.input("Guidance passed downstream as this phase's output", "type guidance…", {
@@ -631,6 +652,41 @@ export default function (pi: ExtensionAPI) {
 			for (const w of v.warnings) {
 				console.warn(`[taskflow:${def.name}] ${w}`);
 			}
+			// Detached (background) execution: spawn a child process and return immediately.
+			if (params.detach) {
+				const state = makeRunState(def, args, ctx.cwd);
+				state.detached = true;
+				saveRun(state);
+
+				// Serialize context for the detached runner script.
+				const { writeFileSync } = await import("node:fs");
+				const { spawn } = await import("node:child_process");
+				const os = await import("node:os");
+				const path = await import("node:path");
+				const tmpFile = path.join(os.tmpdir(), `taskflow-detach-${state.runId}.json`);
+				writeFileSync(tmpFile, JSON.stringify({
+					runId: state.runId,
+					defName: def.name,
+					args,
+					cwd: ctx.cwd,
+				}));
+
+				const runnerScript = path.join(path.dirname(new URL(import.meta.url).pathname), "detached-runner.ts");
+				const child = spawn(process.execPath, ["--experimental-strip-types", runnerScript, tmpFile], {
+					detached: true,
+					stdio: "ignore",
+				});
+				child.unref();
+
+				state.pid = child.pid ?? undefined;
+				saveRun(state);
+
+				return {
+					content: [{ type: "text", text: `Taskflow '${def.name}' started in background (pid: ${child.pid}). Run id: ${state.runId}` }],
+					details: { action, state, message: state.runId } satisfies TaskflowDetails,
+				};
+			}
+
 			const result = await runFlow(def, args, ctx, signal, onUpdate as any);
 			// Surface the validation warnings in the tool result so the model
 			// can acknowledge or fix them, and the user sees them in the chat.

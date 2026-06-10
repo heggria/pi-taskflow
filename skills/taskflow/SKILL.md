@@ -129,6 +129,7 @@ deciding. The (interpolated) `task` is the prompt shown.
 - **Edit** → the typed note becomes this phase's `output`, so you can inject
   guidance mid-run: reference it downstream with `{steps.<id>.output}`.
 - **Non-interactive** runs (headless/CI/print mode) **auto-approve** and record it.
+- **Background (detached)** runs **auto-reject** (no interactive approver) — downstream sees the rejection; the flow continues (fail-open).
 
 ```jsonc
 { "id": "checkpoint", "type": "approval", "dependsOn": ["plan"],
@@ -434,10 +435,18 @@ Quick reference:
 
 ## Actions
 
-- `action: "run"` — run an inline `define` (a one-off DAG) **or** a saved `name` (with optional `args`). Use `define` for an ad-hoc flow; use `name` to invoke something previously saved.
+- `action: "run"` — run an inline `define` (a one-off DAG) **or** a saved `name` (with optional `args`). Use `define` for an ad-hoc flow; use `name` to invoke something previously saved. Add `detach: true` to run in the background (returns immediately with the runId; poll the store for status).
 - `action: "save"` — persist `define` (scope `project` — default, committed/shared — or `user`); it becomes `/tf:<name>`. On a name collision, project overrides user.
 - `action: "resume"` — continue a paused/failed run by `runId`.
 - `action: "list"` — list saved flows. `action: "verify"` — static-check a `define` (zero tokens). `action: "agents"` — list available agents.
+
+## Background (detached) runs
+
+Add `detach: true` to `action: "run"` to spawn the flow in a detached child process. The tool returns immediately with the `runId`; the flow continues running even if the host session exits. Status is polled via the store (`/tf runs` or `action: "resume"`).
+
+- **Approval phases auto-reject** in detached mode (no interactive approver). Downstream phases see the rejection; the flow continues (fail-open).
+- **Crash resilience:** if the detached process crashes, the store persists `status: "failed"`; resume with `action: "resume"`.
+- **Same flow, both modes:** a flow can run foreground or background — `detach` is a dispatch-time decision, not a flow property.
 
 ## Operating a run (lifecycle, resume, inspection)
 

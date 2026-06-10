@@ -131,7 +131,7 @@ The Pi ecosystem now has **20+ delegation, workflow, and orchestration extension
 - **`pi-subagents` / `@gotgenes/pi-subagents`** are the mature picks for ad-hoc "use reviewer on this diff" delegation and background jobs. `pi-taskflow` is for when those delegations need to become a *repeatable, resumable pipeline*.
 - **`pi-pipeline` / `pi-agent-flow`** ship *opinionated, fixed* flows. `pi-taskflow` ships an *empty canvas*: you (or the model) declare the graph that fits the job.
 
-> The honest one-liner: **`pi-taskflow` is the only Pi extension that gives you a *declarative, verifiable, resumable* DAG of task nodes — saved as a one-word command, with zero runtime dependencies and context isolation by design.** Where code-mode workflows let the model *script* the work, `pi-taskflow` lets it *declare a graph the runtime can prove correct before running.* The known gaps it's closing next: loop-until-done, worktree isolation, and non-blocking background runs (see [`STRATEGY.md`](./STRATEGY.md)).
+> The honest one-liner: **`pi-taskflow` is the only Pi extension that gives you a *declarative, verifiable, resumable* DAG of task nodes — saved as a one-word command, with zero runtime dependencies and context isolation by design.** Where code-mode workflows let the model *script* the work, `pi-taskflow` lets it *declare a graph the runtime can prove correct before running.* The known gaps it's closing next: worktree isolation (see [`STRATEGY.md`](./STRATEGY.md)).
 
 ## 30-second start
 
@@ -641,7 +641,7 @@ Our `self-improve` flow is a 10-phase DAG — it audits the codebase, patches de
 
 Known boundaries (tracked, bounded — no surprises mid-flow):
 
-- **No detached background execution.** A run needs the Pi session open. True background execution (and event/cron triggers on top of it) is on the roadmap.
+- **Detached background execution (new).** Add `detach: true` to `action: "run"` to spawn the flow in a detached child process. The tool returns immediately with the `runId`; the flow continues running even if the host session exits. Status is polled via the store (`/tf runs` or `action: "resume"`). Approval phases auto-reject in detached mode.
 - **No `output: "file"`.** Outputs are text/JSON only — write files via an agent's `write` tool call.
 - **`map` requires a JSON array.** The `over` field must resolve to a `{steps.ID.json}` array. Wrap a text list in a single-agent `output: "json"` phase first.
 - **The DAG must be acyclic.** Cycles are rejected at validation.

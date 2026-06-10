@@ -84,6 +84,10 @@ export interface RunState {
 	createdAt: number;
 	updatedAt: number;
 	cwd: string;
+	/** OS PID of a detached runner process (set only for background runs). */
+	pid?: number;
+	/** True for runs spawned via `detach: true` (background execution). */
+	detached?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -817,6 +821,20 @@ export function listRuns(cwd: string, limit = 20): RunState[] {
 /** Stable hash of a phase's resolved task + inputs, for resume caching. */
 export function hashInput(...parts: string[]): string {
 	return crypto.createHash("sha256").update(parts.join("\u0000")).digest("hex").slice(0, 16);
+}
+
+/**
+ * Check whether a process with the given PID is still alive.
+ * Uses signal 0 (no signal sent) — succeeds if the process exists and we have
+ * permission to signal it, throws ESRCH if it doesn't exist.
+ */
+export function isProcessAlive(pid: number): boolean {
+	try {
+		process.kill(pid, 0);
+		return true;
+	} catch {
+		return false;
+	}
 }
 
 /**
