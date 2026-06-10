@@ -2,6 +2,15 @@
 
 All notable changes to pi-taskflow are documented here. This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 
+## [0.0.21] — 2026-06-10
+
+### Added
+- **Per-step context pre-read in shorthand modes.** Single, chain, and tasks shorthand steps now accept `context` (file paths) and `contextLimit`, desugared directly onto the generated phases. This eliminates `O(N²)` file exploration without writing the full DSL. In parallel `tasks` mode all branches share the deduped union of step contexts; chain steps each carry their own context. A top-level `context` in chain mode produces a warning (no unsupported flow-level default). Context-file changes automatically invalidate phase caches.
+
+### Fixed
+- **Headless approval safety.** Approval phases now auto-reject (not auto-approve) when running in detached/background/CI mode, preventing silent bypass of human gates.
+- **Step-reference validator accepts transitive ancestors.** The step-reference checker previously raised false positives on valid DAGs where dependencies span multiple levels of ancestry. Ancestor transitive closure is now fully resolved.
+
 ## [0.0.20] — 2026-06-10
 
 ### Added
