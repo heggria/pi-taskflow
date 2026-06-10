@@ -85,7 +85,51 @@ Keys of each object in `phases[]`. Some only apply to specific `type`s.
 | `tools` | all | agent default | Whitelist of tools for the subagent. See §5. |
 | `cwd` | all | flow cwd | Run this phase's subagent in a different directory. |
 | `concurrency` | map, parallel | flow concurrency | Fan-out cap for this phase only. See §4. |
+| `context` | all | — | File paths / `{steps.X}` refs to **pre-read and inject** before the task. See §2.1. |
+| `contextLimit` | all | `8000` | Max characters read **per file** in `context`. See §2.1. |
+| `cache` | all | `run-only` | Per-phase cache policy (`scope`/`ttl`/`fingerprint`). See §11. |
 | `final` | all | last phase | Exactly one phase may be `final`; its output is returned. |
+
+> Gate-only control fields (`eval`, `onBlock`) and the loop/tournament control
+> fields (`until`/`maxIterations`/`convergence`, `variants`/`judge`/`judgeAgent`/`mode`)
+> are documented in `SKILL.md` next to their phase types.
+
+---
+
+## 2.1 Context pre-reading (`context` / `contextLimit`)
+
+Instead of making a subagent *discover* files by exploring (an O(N²) turn-cost
+spiral), you can **pre-read** known files and inject their contents ahead of the
+task prompt. List file paths and/or `{steps.X}` refs in `context`; the runtime
+resolves interpolated refs first, then reads each file and prepends labeled
+blocks to the task.
+
+```jsonc
+{
+  "id": "review",
+  "type": "agent",
+  "agent": "reviewer",
+  "context": ["src/auth.ts", "src/middleware.ts", "{steps.spec.output}"],
+  "contextLimit": 12000,
+  "task": "Review the auth flow against the spec above. VERDICT: PASS or BLOCK.",
+  "dependsOn": ["spec"]
+}
+```
+
+**Behavior & limits (all enforced in the runtime):**
+
+| Aspect | Rule |
+|--------|------|
+| Resolution order | interpolate `{steps.X}` / `{args.X}` refs **first**, then read file paths. |
+| Per-file cap | `contextLimit` characters per file (default **8000**); longer files are truncated with a marker. |
+| Total cap | the combined injected block is hard-capped at **200,000 chars**; overflow is truncated with a notice. |
+| Unreadable file | skipped with a `console.warn` (never aborts the phase). |
+| JSON-looking entry | a value that looks like a JSON blob (not a path) is diagnosed and skipped, not read as a file. |
+
+Use `context` for **known, bounded** inputs (a handful of source files, an
+upstream phase's output). For large/unknown exploration, let the agent use its
+`read`/`grep` tools instead — pre-reading hundreds of files just hits the total
+cap.
 
 ---
 
@@ -209,7 +253,73 @@ Taskflow shares the subagent settings file at `~/.pi/agent/settings.json`:
 
 ---
 
-## 8. Environment variables
+## 8. Cross-run caching (`cache`)
+
+By default every phase is **`run-only`**: completed phases are reused only when
+you *resume the same run* (the historical behavior). Opt a phase into the
+persistent **cross-run** memoization store to reuse an identical-input result
+from *any prior run* — instant, zero tokens. See `docs/rfc-cross-run-memoization.md`
+for the design.
+
+```jsonc
+{
+  "id": "summarize-deps",
+  "type": "agent",
+  "agent": "writer",
+  "task": "Summarize the dependency tree of this repo.",
+  "cache": {
+    "scope": "cross-run",
+    "ttl": "6h",
+    "fingerprint": ["git:HEAD", "file:package-lock.json"]
+  }
+}
+```
+
+### `scope`
+
+| Value | Meaning |
+|-------|---------|
+| `run-only` (default) | Reuse only within a resumed run — exactly the historical behavior. |
+| `cross-run` | Reuse an identical-input result from **any** prior run (the persistent store). |
+| `off` | Never reuse, even within a run (force re-execution every time). |
+
+### `ttl` (cross-run only)
+
+Max age before a cross-run hit is treated as a miss: e.g. `"30m"`, `"6h"`, `"7d"`.
+Omit for no time bound. A hit older than the TTL re-executes the phase.
+
+### `fingerprint` (cross-run only)
+
+The cache key is normally `phaseId + agent + model + interpolated-task`. A
+fingerprint folds **“did the world change?”** signals into that key, so an
+external change becomes a cache **miss** even when the task text is identical.
+Each entry is one of:
+
+| Entry | Becomes a miss when… | Resolves to |
+|-------|----------------------|-------------|
+| `git:HEAD` / `git:<ref>` | the commit moves | the resolved SHA (30s timeout → `<timeout>`; no git → `<no-git>`) |
+| `glob:<pattern>` | the **set of matching paths** changes | sorted path list (mtime-free) |
+| `glob!:<pattern>` | the **contents** of matching files change | content hashes (capped at 5000 matches) |
+| `file:<path>` | that file's content changes | sha256 of the file (>10 MB or missing → `<skip>`/`<missing>`) |
+| `env:<NAME>` | the env var changes | the env value |
+
+### What is cached, and when
+
+- Only phases whose **`status` is `done`** and that **were not themselves a cache
+  hit** are written to the store (no re-storing a value just read).
+- The store is keyed by the full input hash + fingerprint, tagged with
+  `flowName`/`phaseId`/`runId`/`model` for inspection and LRU eviction.
+- Cross-run reuse is **safe by construction**: a different agent, model, task, or
+  fingerprint produces a different key, so stale results are never served.
+
+> **When to use it:** expensive, deterministic phases whose inputs rarely change
+> (dependency summaries, doc generation, repeated audits of the same tree). For
+> phases that *should* re-run every time (anything reading live external state
+> without a fingerprint), leave the default `run-only` or set `off`.
+
+---
+
+## 9. Environment variables
 
 | Variable | Effect |
 |----------|--------|
@@ -217,7 +327,7 @@ Taskflow shares the subagent settings file at `~/.pi/agent/settings.json`:
 
 ---
 
-## 9. Storage & file locations
+## 10. Storage & file locations
 
 | What | Path | Commit? |
 |------|------|---------|
@@ -233,7 +343,7 @@ Taskflow shares the subagent settings file at `~/.pi/agent/settings.json`:
 
 ---
 
-## 10. Quick recipes
+## 11. Quick recipes
 
 **Pin a strong model only for the review gate:**
 ```jsonc
