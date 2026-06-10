@@ -27,6 +27,7 @@ import { Type } from "typebox";
 import { type AgentScope, discoverAgents, readSubagentSettings, shouldSyncBuiltinAgentsToProject, syncBuiltinAgentsToProject } from "./agents.ts";
 import { renderRunResult, summarizeRun } from "./render.ts";
 import { RunHistoryComponent, type RunHistoryResult } from "./runs-view.ts";
+import { ApprovalViewComponent, type ApprovalChoice } from "./approval-view.ts";
 import { executeTaskflow, type ApprovalDecision, type ApprovalRequest, type RuntimeResult } from "./runtime.ts";
 import { finalPhase, resolveArgs, type Taskflow, validateTaskflow, desugar, isShorthand } from "./schema.ts";
 import {
@@ -166,19 +167,35 @@ async function runFlow(
 	}
 
 	// Human-in-the-loop approver — only when an interactive UI is available.
+	// Renders a scrollable view so long upstream output (e.g. a plan) can be
+	// reviewed in full before deciding (↑↓/PgUp/PgDn to scroll).
 	const requestApproval = ctx.hasUI
 		? async (req: ApprovalRequest): Promise<ApprovalDecision> => {
-				if (req.upstream?.trim()) {
-					const snip = req.upstream.replace(/\s+/g, " ").trim();
-					ctx.ui.notify(`[${def.name}/${req.phaseId}] ${snip.length > 280 ? `${snip.slice(0, 280)}…` : snip}`, "info");
-				}
-				const choice = await ctx.ui.select(
-					`Taskflow approval — ${req.phaseId}: ${req.message}`,
-					["Approve", "Reject", "Edit / add guidance"],
-					{ signal },
-				);
-				if (!choice || choice === "Reject") return { decision: "reject" };
-				if (choice.startsWith("Edit")) {
+				const choice = await ctx.ui.custom<ApprovalChoice>((tui, theme, _kb, done) => {
+					const view = new ApprovalViewComponent(
+						theme,
+						{
+							title: `Taskflow approval — ${def.name}/${req.phaseId}`,
+							message: req.message,
+							upstream: req.upstream,
+						},
+						done,
+						() => tui.terminal.rows,
+					);
+					const onAbort = () => done("reject");
+					signal?.addEventListener("abort", onAbort, { once: true });
+					return {
+						render: (w: number) => view.render(w),
+						invalidate: () => view.invalidate(),
+						handleInput: (data: string) => {
+							view.handleInput(data);
+							tui.requestRender();
+						},
+						dispose: () => signal?.removeEventListener("abort", onAbort),
+					};
+				});
+				if (choice === "reject") return { decision: "reject" };
+				if (choice === "edit") {
 					const note = await ctx.ui.input("Guidance passed downstream as this phase's output", "type guidance…", {
 						signal,
 					});
