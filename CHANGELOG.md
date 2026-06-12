@@ -2,6 +2,83 @@
 
 All notable changes to pi-taskflow are documented here. This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 
+## [0.0.23] — 2026-06-11
+
+> Feature release: the **Shared Context Tree** — an opt-in mechanism that gives
+> subagents a horizontal blackboard and a vertical supervision tree, so fan-out
+> items can reuse expensive context instead of re-reading it, and a node can
+> delegate work at runtime and have its children report back. Validated with six
+> real end-to-end runs (real `pi`, real models) including a recursive org tree
+> and a large 5-way audit that converges through a loop + gate.
+
+### Added
+- **Shared Context Tree (opt-in).** Set `shareContext: true` on a phase (or
+  `contextSharing: true` at the flow level) to give its subagent four extra
+  tools backed by a per-run, file-based blackboard:
+  - `ctx_write(key, value)` / `ctx_read(key?)` — a **horizontal blackboard**: a
+    node publishes a finding; siblings/descendants reuse it (own > ancestors >
+    completed-others on key conflict; a running sibling's half-written findings
+    stay hidden). Stops fan-out items from re-reading the same files.
+  - `ctx_report(summary, structured?)` / `ctx_spawn(assignments[])` — a
+    **vertical supervision tree**: a node reports up, and delegates child work at
+    runtime; the runtime runs each child (isolated) after the node finishes and
+    folds their reports into the phase output.
+  - New module `extensions/context-store.ts` reuses the run store's atomic-write
+    + file-lock primitives (per-node findings files — no global lock contention).
+  - All bookkeeping is **fail-open** (it can never sink a phase); the blackboard
+    is size-bounded (256 KB/value, 256 keys/node), depth-capped (5), and cleaned
+    up with the run. Fully backward-compatible: flows that don't opt in are
+    byte-for-byte unaffected.
+- **`ctx_spawn` accepts a sub-graph, not just flat tasks.** An assignment is now
+  either `{task, agent?}` **or** `{subflow, defaultAgent?}` where `subflow` is an
+  inline Taskflow (a dependency-bearing DAG with `map`/`gate`/`reduce`). The
+  spawned subflow reuses the same `validateTaskflow` + `verifyTaskflow` +
+  nested-`executeTaskflow` machinery as `flow{def}`; spawn-subflows and `flow{def}`
+  share **one** `MAX_DYNAMIC_NESTING` counter (a `def:spawn-*` `_stack` frame), and
+  spawned child token/cost usage is folded into the parent phase for honest budget
+  accounting. A bad subflow fails open with a diagnostic.
+- **Tests: 608 → 670** (+62) across 33 files, incl. `context-store`,
+  `context-tree`, `spawn-xor`, `spawn-subflow`, `spawn-subflow-nesting`,
+  `workspace`, `workspace-isolation`.
+- **Workspace isolation (`cwd` keywords).** A phase's `cwd` now accepts three
+  reserved keywords that make the runtime allocate an isolated working directory
+  for the phase's subagent and tear it down afterwards:
+  - `"temp"` — an ephemeral dir under the OS tmpdir, removed when the phase ends.
+  - `"dedicated"` — a persistent dir under the run state
+    (`runs/ws/<runId>/<phaseId>`), kept for inspection and deterministic per
+    phase so a **resume reuses the same dir**.
+  - `"worktree"` — a real `git worktree` on a throwaway branch off `HEAD`,
+    removed (`git worktree remove --force` + branch delete) when the phase ends;
+    for changes you want to diff / commit / discard in isolation.
+  - New module `extensions/workspace.ts` (zero deps: `fs.mkdtemp` + `git` via
+    `child_process`). **Fail-open**: a failed allocation degrades to the base
+    cwd (`worktree`→`temp` when not a git repo) and records a `warnings`
+    diagnostic — a phase never fails to run because of isolation. **Security**:
+    the keywords are rejected at validation in LLM-authored sub-flows
+    (`flow{def}` / `ctx_spawn` subflow) so generated plans cannot allocate
+    worktrees or temp dirs that mutate the repo. A literal path is passed
+    through unchanged (fully backward-compatible).
+
+### Fixed
+- **`map` / `parallel` fan-out items that call `ctx_spawn` were silently
+  orphaned.** The post-run spawn-drain only covered single-agent/`gate`/`reduce`
+  phases (keyed on the base phase id), but fan-out items run with suffixed node
+  ids (`audit-0`…`audit-4`) and were never drained — their queued children never
+  ran (5 orphaned intents, 0 children, in a real e2e). Each fan-out item now
+  drains its own node and runs + folds its spawned children (reports + usage),
+  fail-open. Regression test added.
+- **Workspace override no longer leaks across isolation boundaries** (found by
+  the pre-release adversarial review). `runInlineSubflow` and the gate
+  `onBlock:retry` upstream re-execution both spread `...deps` without clearing
+  the parent's `_cwdOverride`, so a spawned subflow / re-run upstream dep could
+  be force-pinned to the parent phase's isolated dir. Both now strip the
+  override (a spawned subflow still inherits the parent's dir as its *base* cwd,
+  consistent with `flow{def}`, but no longer ignores an inner phase's own cwd).
+  The triplicated `effCwd` formula was extracted into one `resolveEffCwd()`
+  helper (the divergence was the root cause). `runs/ws/` dedicated-workspace
+  dirs are now reclaimed by the terminal-run cleanup, and `rmrf()` gained a
+  path-containment guard (defense-in-depth).
+
 ## [0.0.22] — 2026-06-10
 
 > Dogfooding release. The `dogfood-full` self-audit taskflow (which itself

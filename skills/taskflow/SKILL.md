@@ -253,6 +253,34 @@ of several drafts, or a synthesis of diverse approaches.
 }
 ```
 
+### Workspace isolation (`cwd` keywords)
+
+A phase's `cwd` is normally a literal path (or inherited from the run). Three
+**reserved keywords** instead ask the runtime to allocate an isolated working
+directory for the phase's subagent and tear it down afterwards — so a phase can
+do scratch work, or mutate files, without touching the main tree:
+
+| `cwd` value | what the runtime does | lifecycle |
+|-------------|-----------------------|-----------|
+| `"temp"` | makes an ephemeral dir under the OS tmpdir | removed when the phase finishes |
+| `"dedicated"` | makes a persistent dir under the run state (`runs/ws/<runId>/<phaseId>`) | **kept** for inspection; deterministic per phase (resume reuses it) |
+| `"worktree"` | `git worktree add` on a throwaway branch off `HEAD` | `git worktree remove` + branch delete when the phase finishes |
+
+```jsonc
+{ "id": "experiment", "type": "agent", "agent": "executor", "cwd": "worktree",
+  "task": "Try the risky refactor and run the tests. Your edits are isolated in a git worktree." }
+```
+
+- **Fail-open.** If allocation fails (e.g. `worktree` requested but the repo
+  isn't a git work tree), the phase degrades — `worktree`→`temp`, and any other
+  failure → the base cwd — and records a `warnings` diagnostic. A phase never
+  fails to run because of isolation.
+- **Security.** The keywords are honoured only in **author-written** flows.
+  An LLM-authored sub-flow (`flow{def}` / `ctx_spawn` subflow) that asks for a
+  reserved keyword is **rejected at validation** — generated plans cannot
+  allocate worktrees or temp dirs that mutate the repo.
+- A literal path is passed through unchanged (fully backward-compatible).
+
 ### Budget (cost / token caps)
 
 Add a run-wide ceiling at the top level. When accumulated cost/tokens exceed it,
@@ -433,6 +461,82 @@ Use the shorthand if you literally just want `a → b → c → d`:
 
 …or write the full DAG with explicit `dependsOn` (so reviewers/fixers can run
 in parallel against multiple review streams when you want that).
+
+### Shared Context Tree (blackboard + supervision) — opt-in
+
+By default subagents are fully isolated: they share nothing and only return a
+final output string. Opt a phase into the **Shared Context Tree** with
+`shareContext: true` (or set `contextSharing: true` at the flow level for every
+phase) to give its subagent four extra tools backed by a per-run, file-based
+blackboard:
+
+| tool | direction | use |
+|------|-----------|-----|
+| `ctx_write(key, value)` | horizontal | publish a finding so siblings/descendants can reuse it (avoid re-reading the same files) |
+| `ctx_read(key?)` | horizontal | read findings visible to this node: its own + ancestors' + **completed** other nodes' (omit `key` to list all) |
+| `ctx_report(summary, structured?)` | vertical ↑ | report a result upward to the parent |
+| `ctx_spawn(assignments[])` | vertical ↓ | delegate child tasks; after this node finishes the runtime runs each child (isolated) and **folds their reports into this phase's output**. Each assignment is either a flat `{task, agent?}` OR a `{subflow, defaultAgent?}` — an inline plan `{phases:[...]}` (a dependency-bearing DAG) the runtime validates and runs as a nested sub-flow |
+
+Visibility is eventually-consistent: a sibling's findings become visible once
+that sibling **completes** (a running sibling's half-written blackboard is
+hidden). Own findings beat ancestors' beat completed-others' on key conflicts.
+
+Use it when fan-out items share expensive context (one map item maps the repo,
+the rest read its findings), or when a task should discover work at runtime and
+delegate it (`ctx_spawn`) rather than the author pre-declaring every branch.
+
+**Spawning a sub-graph (not just flat tasks).** A `ctx_spawn` assignment can be
+a whole inline plan instead of a single task — use `subflow` when the delegated
+work has multiple coordinated steps with dependencies:
+
+```jsonc
+ctx_spawn({ assignments: [
+  { task: "quick standalone check", agent: "analyst" },          // flat task
+  { subflow: {                                                   // a DAG
+      phases: [
+        { id: "scan",  type: "agent",  agent: "scout",  task: "list endpoints" },
+        { id: "audit", type: "map",    over: "{steps.scan.json}", task: "audit {item}", dependsOn: ["scan"] },
+        { id: "sum",   type: "reduce", from: ["audit"], task: "summarize", dependsOn: ["audit"], final: true }
+      ]
+    },
+    defaultAgent: "analyst"   // inner phases without their own `agent` use this
+  }
+] })
+```
+
+The subflow is validated (cycles / dangling refs / dead-ends) before it runs;
+a bad plan fails **open** (a diagnostic is folded into the report, the run
+continues). `agent` (flat task) = who executes; `defaultAgent` (subflow) =
+fallback for inner phases — different fields because the semantics differ.
+Nesting is bounded: spawn-subflows and `flow{def}` share one depth counter
+capped at `MAX_DYNAMIC_NESTING` (5), so neither can multiply with the other.
+
+```jsonc
+{ "id": "survey", "type": "agent", "agent": "scout", "shareContext": true,
+  "task": "Map the API surface. ctx_write key 'endpoints' with the JSON list so the auditors don't re-scan." },
+{ "id": "audit", "type": "map", "over": "{steps.survey.json}", "shareContext": true,
+  "dependsOn": ["survey"], "agent": "analyst",
+  "task": "ctx_read 'endpoints' for shared context, then audit {item} for missing auth." }
+```
+
+Guards & limits: ids used with sharing must match `[A-Za-z0-9._-]+`; keys are
+`[A-Za-z0-9._-]` (≤128 chars); values ≤256 KB; ≤256 keys/node; `ctx_spawn`
+≤16 tasks/call, task ≤64 KB, depth-capped at 5. All bookkeeping is fail-open
+(it can never sink a phase) and the per-run blackboard is cleaned up with the
+run. Backward compatible: flows that don't opt in behave exactly as before.
+
+You do **not** need to teach the tools in your `task` text — enabling
+`shareContext` auto-appends usage guidance to the subagent's system prompt
+(read-first discipline, publish reusable findings, report up, delegate on
+fan-out). Mentioning a specific key in the task (e.g. "ctx_write the endpoint
+list under 'endpoints'") just makes the cross-phase contract explicit.
+
+**Producer tip (learned from real runs):** the phase that *publishes* shared
+context should be a **capable** agent (high thinking), and the `ctx_write`
+should be framed as its **primary deliverable** ("if you did not call ctx_write
+you failed the task"). A fast / `thinking: off` agent asked to "survey AND
+ctx_write" will often do the survey and skip the write. Consumers (the agents
+that `ctx_read`) can be lighter — reading is a single reliable step.
 
 ## Configuration
 

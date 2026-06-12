@@ -24,6 +24,7 @@ extensions/           ← All source code lives here (no src/ directory)
 ├── store.ts          ← Persistence: flow definitions + run state + file locks + index
 ├── cache.ts          ← Cross-run memoization: fingerprint resolution + CacheStore
 ├── verify.ts         ← Static DAG verification (zero-token structural analysis)
+├── context-store.ts  ← Shared Context Tree: file-based blackboard + supervision tree (ctx_read/write/report/spawn)
 ├── usage.ts          ← Token/cost accounting (UsageStats type + aggregation)
 ├── render.ts         ← TUI rendering for phase progress and run views
 ├── runs-view.ts      ← Interactive run history TUI
@@ -118,7 +119,7 @@ npm run test:e2e      # End-to-end tests (needs live pi + model access)
 - **Mock runner**: Create a `RuntimeDeps["runTask"]` function that returns canned `RunResult` objects.
 - **Temp dirs**: `fs.promises.mkdtemp(path.join(os.tmpdir(), "prefix-"))` — always clean up in finally/after.
 - **Environment**: `PI_TASKFLOW_BUILTIN_AGENTS_DIR=` (empty) disables built-in agent loading in tests.
-- **New test files**: Add to the `test` script in `package.json`.
+- **New test files**: name them `<name>.test.ts` in `test/` — the `test` script globs `test/*.test.ts`, so they're picked up automatically (no manual list to update). E2E scripts use the `.mts` extension specifically so the glob excludes them (they need a live `pi`).
 
 ### File Structure Rules
 - **Source**: All `.ts` source in `extensions/`. No `src/` directory.
@@ -167,7 +168,7 @@ npm run test:e2e      # End-to-end tests (needs live pi + model access)
 
 | File | Lines | Responsibility |
 |------|-------|----------------|
-| `runtime.ts` | ~1340 | Core orchestration: `executeTaskflow()`, `executePhase()`, all 9 phase types |
+| `runtime.ts` | ~1870 | Core orchestration: `executeTaskflow()`, `executePhase()`, all 9 phase types |
 | `schema.ts` | ~550 | DSL types, validation, desugar, topo sort, cycle detection |
 | `runner.ts` | ~420 | Subagent spawn, NDJSON parsing, error sanitization, idle watchdog |
 | `store.ts` | ~650 | Persistence, file locks, index, cleanup, atomic writes |

@@ -59,7 +59,7 @@ tagline is **Structurally Verifiable**, never unqualified "provable".
 |-----|----------------------|:------:|
 | **Loop-until-done** | new `loop` phase: `"until": "{steps.X.output.done}==true"` + `maxIterations` + convergence detection — **✅ shipped** | M |
 | **Tournament** | new `tournament` phase: N variants compete, a judge sub-phase picks `best`/`aggregate` — **✅ shipped** | M |
-| **Worktree isolation** | `"cwd": "temp"`/`"dedicated"` per phase; runtime creates & destroys an isolated dir | M |
+| **Worktree isolation** | `"cwd": "temp"`/`"dedicated"`/`"worktree"` per phase; runtime creates & destroys an isolated dir (or a git worktree on a throwaway branch) — **✅ shipped** | M |
 | **Security quarantine** | per-phase `"tools": {"allow":[...], "deny":[...]}` (depends on pi core tool-restriction API) | S (if pi supports) |
 | **Saga/compensation** | `compensate` phase triggered on upstream failure, reverse order | L (defer) |
 

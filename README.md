@@ -8,24 +8,18 @@
   <a href="./LICENSE"><img src="https://img.shields.io/badge/license-MIT-43D9AD?style=flat-square" alt="MIT license"></a>
   <a href="#whats-inside"><img src="https://img.shields.io/badge/runtime%20deps-0-43D9AD?style=flat-square" alt="zero runtime dependencies"></a>
   <a href="https://github.com/heggria/pi-taskflow/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/heggria/pi-taskflow/ci.yml?branch=main&style=flat-square&label=CI" alt="CI status"></a>
-  <a href="#whats-inside"><img src="https://img.shields.io/badge/tests-608-6E8BFF?style=flat-square" alt="608 tests"></a>
+  <a href="#whats-inside"><img src="https://img.shields.io/badge/tests-670-6E8BFF?style=flat-square" alt="670 tests"></a>
   <a href="#whats-inside"><img src="https://img.shields.io/badge/dogfooded-%E2%9C%93-43D9AD?style=flat-square" alt="dogfooded"></a>
   <a href="https://pi.dev"><img src="https://img.shields.io/badge/for-Pi%20coding%20agent-B692FF?style=flat-square" alt="for the Pi coding agent"></a>
 </p>
 
 <p align="center">
   <b>English</b> ·
-  <a href="./README.zh-CN.md">简体中文</a> ·
-  <a href="./docs/i18n/README.hi.md">हिन्दी</a> ·
-  <a href="./docs/i18n/README.es.md">Español</a> ·
-  <a href="./docs/i18n/README.ar.md">العربية</a> ·
-  <a href="./docs/i18n/README.bn.md">বাংলা</a> ·
-  <a href="./docs/i18n/README.pt.md">Português</a> ·
-  <a href="./docs/i18n/README.ru.md">Русский</a>
+  <a href="./README.zh-CN.md">简体中文</a>
 </p>
 
 <p><strong>A declarative, verifiable <em>graph of tasks</em> for <a href="https://pi.dev">Pi</a> subagents.</strong><br/>
-Not a workflow you script — a DAG you declare. Fan out · gate · resume · save as a command — intermediate results stay out of your context.</p>
+Not a workflow you script — a DAG you declare. Fan out · gate · loop · tournament · resume · save as a command — intermediate results stay out of your context.</p>
 
 ```bash
 pi install npm:pi-taskflow
@@ -37,7 +31,7 @@ pi install npm:pi-taskflow
 
 **A `workflow` flows. A `taskflow` is a *graph*.** Other orchestrators let the model *script* the work — imperative code that flows step by step, with the graph hidden inside control flow. `pi-taskflow` does the opposite: you **declare** the work as a graph of discrete, named **task** nodes connected by `dependsOn` edges — and the runtime *verifies that graph before it spends a single token.*
 
-You already know the built-in subagent tool's `task` / `tasks` / `chain`. `pi-taskflow` speaks the *same* shorthand — so your existing delegations instantly become **tracked, resumable, and saveable as a one-word `/tf:<name>` command**. When you outgrow the shorthand, the full DSL gives you a real DAG: dynamic fan-out over dozens of items, conditional routing, quality gates, human approvals, retries, and a hard spend ceiling.
+You already know the built-in subagent tool's `task` / `tasks` / `chain`. `pi-taskflow` speaks the *same* shorthand — so your existing delegations instantly become **tracked, resumable, and saveable as a one-word `/tf:<name>` command**. When you outgrow the shorthand, the full DSL gives you a real DAG: dynamic fan-out over dozens of items, conditional routing, quality gates, human approvals, retries, loops, tournaments, and a hard spend ceiling.
 
 And the whole time, **only the final phase reaches your conversation.** Every intermediate transcript stays in the runtime, never your context window.
 
@@ -81,7 +75,9 @@ Here's the wall you hit with raw subagents: you describe a multi-step plan in pr
 | **Fault tolerance** | ✗ | **per-phase `retry` + auto-retry on transient errors** |
 | **Human-in-the-loop** | ✗ | **`approval` phases (approve / reject / edit)** |
 | **Cost control** | ✗ | **run-wide `budget` (USD / token caps)** |
-| **Composition** | ✗ | **`flow` phases run saved sub-flows** |
+| **Composition** | ✗ | **`flow` phases run saved *or runtime-generated* sub-flows** |
+| **Iterative loops** | ✗ | **`loop` phases — repeat until condition, convergence, or cap** |
+| **Competitive selection** | ✗ | **`tournament` phases — N variants + judge** |
 | **Live progress** | opaque while running | **live DAG render with timing + cost** |
 | **Ergonomics** | inline JSON each time | **shorthand (`task`/`tasks`/`chain`) *or* DSL** |
 
@@ -99,13 +95,13 @@ The closest thing to `pi-taskflow` in spirit is the **dynamic / code-mode workfl
 | **See it** | ✗ the graph only exists as the code runs | **✓ the live progress render *is* the DAG** |
 | **Resume** | coarse (call-cache dedup) | **✓ phase-by-phase input-hash resume, cross-session** |
 | **Safe to LLM-generate** | risky — it's executable code | **✓ it's just data — no `eval`; and a runtime-generated sub-flow is *structurally validated* (cycles / dangling refs / duplicate ids) before it runs** |
-| **Expressivity ceiling** | **higher** — arbitrary control flow | bounded by the DSL, but `map`/`when`/`loop`/`gate` — plus **runtime-generated sub-flows (`flow {def}`)** for plan-then-execute and iterative replanning — cover most jobs |
+| **Expressivity ceiling** | **higher** — arbitrary control flow | bounded by the DSL, but `map`/`when`/`loop`/`gate`/`tournament` — plus **runtime-generated sub-flows (`flow {def}`)** for plan-then-execute and iterative replanning — cover most jobs |
 
 We chose the **verifiable** side on purpose. The expressivity you give up is real; what you get back — a plan you can check, watch, replay, and safely let a model author — is what turns one-off prompting into durable orchestration.
 
 ## Compared to other Pi extensions
 
-The Pi ecosystem now has **20+ delegation, workflow, and orchestration extensions** — each great at what it's for. Here's an honest map of where `pi-taskflow` sits (verified against each package's latest npm release, June 2026). For the full breakdown — every package, strengths *and* weaknesses — see [`PI-ECOSYSTEM.md`](./PI-ECOSYSTEM.md). For the broader, non-Pi landscape (LangGraph, Temporal, CrewAI, Mastra…) see [`COMPETITORS.md`](./COMPETITORS.md).
+The Pi ecosystem now has **20+ delegation, workflow, and orchestration extensions** — each great at what it's for. Here's an honest map of where `pi-taskflow` sits (verified against each package's latest npm release, June 2026). For the full breakdown — every package, strengths *and* weaknesses — see [`docs/internal/PI-ECOSYSTEM.md`](./docs/internal/PI-ECOSYSTEM.md). For the broader, non-Pi landscape (LangGraph, Temporal, CrewAI, Mastra…) see [`docs/internal/COMPETITORS.md`](./docs/internal/COMPETITORS.md).
 
 | Extension | Model | Custom DSL | DAG | Dynamic fan-out | Cross-session resume | Quality gate | Human approval | Save as command | Zero deps |
 |---|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
@@ -120,18 +116,18 @@ The Pi ecosystem now has **20+ delegation, workflow, and orchestration extension
 | [`pi-pipeline`](https://www.npmjs.com/package/pi-pipeline) | fixed SPEC→PLAN→TASKS→VERIFY | ✕ | fixed | ✕ | session planning | ✓ | clarify | ✕ | ✕ (2) |
 | [`pi-agent-flow`](https://www.npmjs.com/package/pi-agent-flow) | one-shot parallel specialist `fork` | yes | ✕ | ✕ | – | ✕ | ✕ | – | ✕ (2) |
 
-*(Representative slice of the 20+ — see [`PI-ECOSYSTEM.md`](./PI-ECOSYSTEM.md) for all of them, plus `@0xkobold/pi-orchestration`, `@melihmucuk/pi-crew`, `@mediadatafusion/pi-workflow-suite`, `gentle-pi`, `@dreki-gg/pi-subagent`, and more.)*
+*(Representative slice of the 20+ — see [`docs/internal/PI-ECOSYSTEM.md`](./docs/internal/PI-ECOSYSTEM.md) for all of them, plus `@0xkobold/pi-orchestration`, `@melihmucuk/pi-crew`, `@mediadatafusion/pi-workflow-suite`, `gentle-pi`, `@dreki-gg/pi-subagent`, and more.)*
 
 **How to choose:**
 
 - **`@pi-agents/orchid`** is the most feature-complete orchestrator in the ecosystem (DAG + worktrees + Ralph loop + agent mailbox) — but its DSL is a *fixed* 9-phase pipeline, it carries runtime deps + jiti, and it's beta. Reach for `pi-taskflow` when you want to **define your own graph** (not adopt an opinionated one) with **zero dependencies** and a one-command install.
 - **`pi-crew` / `ultimate-pi`** go heavier — worktree isolation, durable async teams, multi-tier governance. If you want lightweight, declarative, and zero-dependency, that's this project.
 - **`@zhushanwen/pi-workflow`** is the closest in spirit and also zero-dep, but it's the **imperative** side of the split above: you author workflows as **JavaScript scripts** the model writes and runs. `pi-taskflow`'s **declarative JSON DAG** is the verifiable side — statically checkable, visualizable, safe to LLM-generate, and resumable at phase granularity rather than call-cache dedup.
-- **`@fiale-plus/pi-rogue-orchestration`** has a real **loop-until-done** (a feature `pi-taskflow` doesn't yet have). If your job is "keep going until the goal is met," it's worth a look; `pi-taskflow` is for *structured, branching* pipelines instead.
+- **`@fiale-plus/pi-rogue-orchestration`** has a real **loop-until-done** (goal-driven iteration). `pi-taskflow` now ships its own `loop` phase (v0.0.13+) plus `tournament` for competitive selection — and unlike rogue-orchestration, `pi-taskflow` has a full DAG with gates, compositional sub-flows, and cross-session resume. For raw "keep going until the goal is met" with minimal structure, rogue-orchestration is still lighter; for structured, branching pipelines, `pi-taskflow` covers the same ground and more.
 - **`pi-subagents` / `@gotgenes/pi-subagents`** are the mature picks for ad-hoc "use reviewer on this diff" delegation and background jobs. `pi-taskflow` is for when those delegations need to become a *repeatable, resumable pipeline*.
 - **`pi-pipeline` / `pi-agent-flow`** ship *opinionated, fixed* flows. `pi-taskflow` ships an *empty canvas*: you (or the model) declare the graph that fits the job.
 
-> The honest one-liner: **`pi-taskflow` is the only Pi extension that gives you a *declarative, verifiable, resumable* DAG of task nodes — saved as a one-word command, with zero runtime dependencies and context isolation by design.** Where code-mode workflows let the model *script* the work, `pi-taskflow` lets it *declare a graph the runtime can prove correct before running.* The known gaps it's closing next: worktree isolation (see [`STRATEGY.md`](./STRATEGY.md)).
+> The honest one-liner: **`pi-taskflow` is the only Pi extension that gives you a *declarative, verifiable, resumable* DAG of task nodes — saved as a one-word command, with zero runtime dependencies and context isolation by design.** Where code-mode workflows let the model *script* the work, `pi-taskflow` lets it *declare a graph the runtime can prove correct before running.* Recently shipped from the roadmap: the Shared Context Tree (blackboard + supervision) and worktree isolation (see [`docs/internal/STRATEGY.md`](./docs/internal/STRATEGY.md)).
 
 ## 30-second start
 
@@ -175,6 +171,16 @@ That's it. You can be running your first workflow before your coffee cools — w
 ```
 
 `agent` is optional (defaults to the first discovered agent). Add a `name` to label the run and unlock saving it as a command.
+
+Shorthand modes also support per-step **context pre-reading** — pass `context` (file paths) and optionally `contextLimit` (max chars per file, default 8000) at the step level:
+
+```jsonc
+// Chain with context files injected into each step
+{ "chain": [
+  { "task": "List the public API", "agent": "scout", "context": ["src/lib/**/*.ts"] },
+  { "task": "Write docs for:\n{previous.output}", "agent": "writer" }
+] }
+```
 
 ## Watch it run
 
@@ -262,6 +268,60 @@ The intermediate summaries never enter your context. The runtime owns them; you 
 
 No scripting. No `eval`. Just data the runtime executes — safe enough to run LLM-generated definitions directly.
 
+### Loop until done
+
+Some work is inherently iterative — refine a draft until a reviewer is satisfied, retry-and-improve until tests pass, converge on an answer:
+
+```jsonc
+{
+  "id": "refine",
+  "type": "loop",
+  "task": "Improve this draft (iteration {loop.iteration}). Previous attempt:\n{loop.lastOutput}\n\nReturn JSON {\"draft\":\"…\",\"done\":true|false}.",
+  "until": "{steps.refine.json.done} == true",
+  "output": "json",
+  "maxIterations": 6,
+  "convergence": true
+}
+```
+
+See [Loop phases](#loop-until-done-loop) for the full reference.
+
+### Plan, then execute (runtime sub-flows)
+
+A planner decides *at runtime* what work to spawn — each iteration's plan depends on the previous result:
+
+```jsonc
+{
+  "name": "iterative-replan",
+  "phases": [
+    { "id": "plan", "type": "agent", "agent": "planner",
+      "task": "Given the current state, output a JSON taskflow definition (with phases[]).",
+      "output": "json" },
+    { "id": "execute", "type": "flow", "def": "{steps.plan.json}",
+      "dependsOn": ["plan"] }
+  ]
+}
+```
+
+The generated sub-flow is **validated** (no cycles, no dangling refs, no duplicate IDs) before a single token is spent. See [`examples/dynamic-plan-execute.json`](./examples/dynamic-plan-execute.json) and [`examples/iterative-replan.json`](./examples/iterative-replan.json).
+
+### Tournament (compete and judge)
+
+For open-ended creative or subjective work, spawn several competing variants and let a judge pick the best:
+
+```jsonc
+{
+  "id": "headline",
+  "type": "tournament",
+  "task": "Write a punchy headline for this launch post.",
+  "variants": 4,
+  "judge": "Pick the headline with the strongest hook and clearest promise.",
+  "mode": "best"
+}
+```
+
+See [Tournament phases](#tournament-tournament) for the full reference.
+
 ## Phase types
 
 | type | what it does | required fields |
@@ -289,23 +349,56 @@ Every phase needs a unique `id` and a `type` (defaults to `agent`). On top of th
 | `retry` | `{ max, backoffMs?, factor? }` — retry a failing subagent |
 | `output` | `"text"` (default) or `"json"` (exposes `{steps.ID.json}`) |
 | `model` / `thinking` / `tools` | Per-phase overrides for the subagent |
-| `cwd` | Working directory for the subagent |
+| `cwd` | Working directory for the subagent. A literal path, or a reserved keyword for **workspace isolation** — `"temp"` (ephemeral dir, removed after), `"dedicated"` (persistent dir under the run state, kept), `"worktree"` (a git worktree on a throwaway branch, removed after). Fail-open; rejected in LLM-authored sub-flows. |
+| `context` | File paths to pre-read and inject into the agent prompt |
+| `contextLimit` | Max chars per context file (default 8000) |
 | `concurrency` | Fan-out cap for `map` / `parallel` (overrides the flow default) |
 | `final` | Marks the result-bearing phase (else the last phase wins) |
 | `optional` | A failure here does **not** abort the run |
-| `use` / `with` | (`flow`) saved sub-flow name + its args |
-| `def` | (`flow`) inline sub-flow **generated at runtime** — usually `"{steps.plan.json}"` (mutually exclusive with `use`) |
+| `shareContext` | Opt this phase's subagent into the **Shared Context Tree** (see below). Set `contextSharing: true` at the flow level to enable it for every phase |
 | `cache` | `{ scope, ttl?, fingerprint? }` — cross-run memoization (see below) |
+| `onBlock` | `"halt"` (default) or `"retry"` — what happens when a gate blocks |
+| `eval` | Zero-token machine-checkable criteria that run *before* the LLM gate |
 
-Flow-level keys: `name`, `description`, `args`, `concurrency` (default 8), `agentScope`, and `budget: { maxUSD?, maxTokens? }`.
+Flow-level keys: `name`, `description`, `args`, `concurrency` (default 8), `agentScope`, `contextSharing`, `strictInterpolation`, and `budget: { maxUSD?, maxTokens? }`.
+
+### Shared Context Tree (blackboard + supervision)
+
+By default subagents are fully isolated — they share nothing and only return a
+final string. Opt a phase in with `shareContext: true` (or `contextSharing: true`
+flow-wide) to give its subagent four extra tools backed by a per-run, file-based
+blackboard:
+
+| tool | direction | use |
+|------|-----------|-----|
+| `ctx_write(key, value)` | horizontal | publish a finding so siblings/descendants reuse it (stop re-reading the same files) |
+| `ctx_read(key?)` | horizontal | read findings visible to this node: its own + ancestors' + **completed** others' |
+| `ctx_report(summary, structured?)` | vertical ↑ | report a result up to the parent |
+| `ctx_spawn(assignments[])` | vertical ↓ | delegate child work at runtime; each assignment is a flat `{task}` **or** a `{subflow}` (a dependency-bearing DAG the runtime validates and runs nested). Child reports fold back into this phase's output |
+
+The first two are a **horizontal blackboard** (siblings reuse expensive context);
+the last two are a **vertical supervision tree** (a node delegates work and its
+children report up). Everything is opt-in, fail-open, depth-capped (5 levels), size-bounded
+(256KB per value, 256 keys per node, 16 spawn assignments max), and cleaned up
+with the run — flows that don't opt in behave exactly as before.
+
+```jsonc
+{ "id": "survey", "type": "agent", "agent": "scout", "shareContext": true,
+  "task": "Map the API surface. ctx_write key 'endpoints' so the auditors don't re-scan." },
+{ "id": "audit", "type": "map", "over": "{steps.survey.json}", "shareContext": true,
+  "dependsOn": ["survey"], "agent": "analyst",
+  "task": "ctx_read 'endpoints' for shared context, then audit {item} for missing auth." }
+```
 
 ### Control flow & reliability
 
-- **`when`** — skip a phase unless an expression is truthy. Supports `{refs}`, `== != < > <= >=`, `&& || !`, parentheses, and quoted strings/numbers. Pair with `join: "any"` on the merge phase for real if/else routing. Parse errors **fail open**.
+- **`when`** — skip a phase unless an expression is truthy. Supports `{refs}`, `== != < > <= >=`, `&& || !`, parentheses, and quoted strings/numbers. Pair with `join: "any"` on the merge phase for real if/else routing. Parse errors **fail open** (the phase runs — never silently dropped).
 - **`join: "any"`** — an OR-join: the phase runs as soon as *one* dependency completes (default `"all"` waits for all).
 - **`retry`** — `{ "max": 2, "backoffMs": 500, "factor": 2 }` retries a failing subagent with fixed or exponential backoff; usage is summed and the attempt count shows as `↻N` in the TUI. Transient provider errors (rate-limit / 5xx / timeout) **auto-retry even without an explicit policy**; hard errors don't.
-- **`approval`** — pause for a human (Approve / Reject / Edit). Reject halts the flow; Edit injects the typed note as the phase output for downstream steps. Non-interactive runs auto-reject (safety: approval gates are never bypassed).
-- **`flow`** — `{ "type": "flow", "use": "deep-research", "with": { "topic": "{item}" } }` runs a **saved** flow as a phase (recursion is detected and rejected). Or **generate the sub-flow at runtime**: `{ "type": "flow", "def": "{steps.plan.json}" }` resolves an upstream phase's JSON output into a sub-flow, **validates it (cycles / dangling refs / duplicate ids), then runs it** — the number and shape of the generated phases is decided at runtime, not authored in advance. A malformed plan fails *open* (the phase is skipped with a `defError`, the run continues). This is how a planner decides *at runtime* what work to spawn — the declarative answer to a code-mode `for` loop, with each generated plan checked before it spends a token. Pair it with `loop` for **data-dependent iterative replanning** (round N's plan depends on round N-1's result). See [`examples/dynamic-plan-execute.json`](./examples/dynamic-plan-execute.json) and [`examples/iterative-replan.json`](./examples/iterative-replan.json).
+- **`onBlock`** — `"halt"` (default) stops the run when a gate blocks. `"retry"` retries upstream phases when a gate blocks, instead of halting — a self-healing rework loop with budget and idle-watchdog guards and a nested recursion depth cap.
+- **`eval`** — zero-token machine-checkable criteria that run *before* the LLM gate. If the eval check fails, the gate blocks without spawning an agent.
+- **`approval`** — pause for a human (Approve / Reject / Edit). Reject halts the flow; Edit injects the typed note as the phase output for downstream steps. Non-interactive runs (detached / CI) **auto-reject** (safety: approval gates are never bypassed).
+- **`flow`** — `{ "type": "flow", "use": "deep-research", "with": { "topic": "{item}" } }` runs a **saved** flow as a phase (recursion is detected and rejected). Or **generate the sub-flow at runtime**: `{ "type": "flow", "def": "{steps.plan.json}" }` resolves an upstream phase's JSON output into a sub-flow, **validates it (cycles / dangling refs / duplicate ids / dead-ends), then runs it** — the number and shape of the generated phases is decided at runtime, not authored in advance. A malformed plan fails *open* (the phase is skipped with a `defError`, the run continues). This is how a planner decides *at runtime* what work to spawn — the declarative answer to a code-mode `for` loop, with each generated plan checked before it spends a token. Security hardening for LLM-generated sub-flows: breadth caps (100 phases, 200 map items, 16 concurrency), `cwd` containment, budget clamped to `min(child, parent)`, nesting cap (5 levels), and prototype-pollution defense (deep-cloned, `__proto__`/`constructor`/`prototype` stripped). Pair it with `loop` for **data-dependent iterative replanning** (round N's plan depends on round N-1's result). See [`examples/dynamic-plan-execute.json`](./examples/dynamic-plan-execute.json) and [`examples/iterative-replan.json`](./examples/iterative-replan.json).
 
 ### Loop-until-done (`loop`)
 
@@ -348,8 +441,6 @@ For open-ended work, the best result often comes from generating several candida
 - **Judge** — after the fan-out, one judge agent sees every variant (numbered) plus your `judge` rubric and picks a winner via a `WINNER: <n>` line or `{"winner": n}`. An unreadable verdict **fails open** to variant 1; a failed judge falls back too — the work is never lost.
 - **`mode`** — `best` returns the winning variant **verbatim**; `aggregate` returns the judge's **synthesized** answer combining the strongest parts.
 - **Short-circuits:** if only one competitor survives, it wins with no judge call; if all fail, the phase fails. The TUI shows `⚑ N→#k`; usage sums variants + judge. Like `gate`, it's **excluded from `cross-run` cache**.
-- **`budget`** — a run-wide `{maxUSD, maxTokens}` ceiling; once exceeded, pending phases skip and in-flight fan-out stops spawning, ending the run as `blocked`.
-- **idle watchdog** — a subagent that goes silent for 5 minutes is treated as wedged and killed (SIGTERM → SIGKILL), so one hung child can never freeze the whole flow.
 
 ### Cross-run memoization (`cache`)
 
@@ -371,7 +462,7 @@ Every phase is already content-addressed: within a single run's **resume**, a ph
 - **`scope`** — `"run-only"` (default) is exactly the historical behavior (within-run resume only). `"cross-run"` opts the phase into the persistent store. `"off"` disables reuse entirely (even within a run), for debugging.
 - **Freshness is the whole game.** The cache key already includes the prompt, the `over` items, and any `context` files (pre-read into the task). `fingerprint` folds *implicit* inputs into the key so "the world changed" becomes a cache miss: `git:HEAD`, `glob:<pat>` (size+mtime), `glob!:<pat>` (content hash), `file:<path>`, `env:<NAME>`. `ttl` (`30m`/`6h`/`7d`) is a time backstop.
 - **Honest limit:** a subagent that reads a file it didn't declare in `context`/`fingerprint` can still serve a stale `cross-run` hit. That's why the default is `run-only` and why `gate`/`approval` phases are **forbidden** from `cross-run` (they must produce a fresh result each run). Opt in only for phases whose output is a function of declared inputs.
-- Cache lives in `.pi/taskflows/cache/` (gitignored). Clear it with `action: "cache-clear"`. Full rationale: [`docs/rfc-cross-run-memoization.md`](./docs/rfc-cross-run-memoization.md).
+- Cache lives in `.pi/taskflows/cache/` (gitignored). Clear it with `action: "cache-clear"` on the tool. Full rationale: [`docs/internal/rfc-cross-run-memoization.md`](./docs/internal/rfc-cross-run-memoization.md).
 
 ### Gate phases (quality control)
 
@@ -398,10 +489,15 @@ Review the audit below. If any endpoint is missing auth, end with
 | `{steps.ID.json}` | prior output parsed as JSON (or `{steps.ID.json.field}`) |
 | `{item}` / `{item.field}` | current item inside a `map` phase |
 | `{previous.output}` | the immediately-upstream phase output |
+| `{loop.iteration}` | current iteration number inside a `loop` phase |
+| `{loop.lastOutput}` | previous iteration's output inside a `loop` phase |
+| `{loop.maxIterations}` | the iteration cap inside a `loop` phase |
 
 Condition grammar (for `when`): `== != < > <= >=`, `&& || !`, parentheses, quoted strings/numbers, and any `{...}` reference — e.g. `"when": "{steps.triage.json.route} == deep && {args.force} != true"`.
 
 > Referencing `{steps.X}` that isn't declared in `dependsOn` is a **hard validation error** — the runtime catches the most common pipeline bug before a single agent runs.
+
+> Unresolved interpolation refs (e.g. `{args.typo}` or a missing `dependsOn`) are surfaced as **phase warnings** (`PhaseState.warnings`) in the run record and `/tf runs` — no more silent intact placeholders.
 
 ## Commands
 
@@ -412,12 +508,30 @@ Saved flows become CLI shortcuts. All commands run in the Pi session:
 | `/tf list` | List all saved flows |
 | `/tf run <name> [args]` | Run a saved flow (e.g. `/tf run summarize-files dir=src`) |
 | `/tf show <name>` | Print a flow's definition |
-| `/tf runs` | Browse recent run history (interactive TUI) |
+| `/tf runs` | Browse recent run history (interactive TUI — **live auto-refreshes** while any run is active) |
 | `/tf resume <runId>` | Continue a paused/failed run — cached phases skip automatically |
 | `/tf init` | **Interactively map model roles** to your enabled models (writes `~/.pi/agent/settings.json`) |
 | `/tf:<name> [args]` | Shortcut — runs the flow in one tap |
 
-Tool actions (used by the model): `run` (inline `define` or saved `name`), `save`, `resume`, `list`, `init`.
+Tool actions (used by the model): `run` (inline `define` or saved `name`), `save`, `resume`, `list`, `agents`, `init`, `verify`, `cache-clear`.
+
+## Background (detached) execution
+
+Pass `detach: true` to run a taskflow in a detached child process — the tool returns immediately with the `runId` and the flow continues running even if the host session exits:
+
+```jsonc
+{
+  "action": "run",
+  "name": "nightly-audit",
+  "detach": true
+}
+```
+
+- The child process reads serialized context, calls the orchestration engine, and persists terminal state to the store.
+- Status is polled via `/tf runs` (which now **auto-refreshes live** when any run is running) or `action: "resume"`.
+- Stale PID detection via signal-0 probe; the idle watchdog kills stalled children.
+- **Approval phases auto-reject** in detached mode — human gates are never silently bypassed.
+- `resume` works normally after a detached run completes or fails.
 
 ## Resume across sessions
 
@@ -432,12 +546,13 @@ Resume is keyed on each phase's input hash — if an upstream output changed, de
 ## Storage
 
 ```
-.pi/taskflows/<name>.json          # project-scoped definitions (commit to share)
-~/.pi/agent/taskflows/<name>.json  # user-scoped definitions
+.pi/taskflows/<name>.json              # project-scope definitions (commit to share)
+~/.pi/agent/taskflows/<name>.json      # user-scope definitions
 .pi/taskflows/runs/<flowName>/<runId>.json  # run state for resume (gitignore this)
+.pi/taskflows/cache/                   # cross-run memoization cache (gitignored)
 ```
 
-> Commit `.pi/taskflows/` and your whole team shares the pipelines — no config sync, no onboarding doc. Run state is written atomically and guarded by a zero-dependency file lock, so concurrent runs never corrupt the index.
+> Commit `.pi/taskflows/` and your whole team shares the pipelines — no config sync, no onboarding doc. Run state is written atomically via `writeFileAtomic()` (temp file + `renameSync`) and guarded by a zero-dependency file lock (`O_CREAT|O_EXCL` with stale-lock steal via atomic rename), so concurrent runs never corrupt the index.
 
 Agent discovery scope (via `agentScope` in the flow definition):
 
@@ -446,6 +561,8 @@ Agent discovery scope (via `agentScope` in the flow definition):
 | `"user"` (default) | `~/.pi/agent/agents/*.md` |
 | `"project"` | `.pi/agents/*.md` (walks up the tree) |
 | `"both"` | user + project; project wins on name collision |
+
+Run cleanup is configurable via `maxKeptRuns` and `maxRunAgeDays` in settings.
 
 ## Agents
 
@@ -601,6 +718,8 @@ Ready-to-read definitions in [`examples/`](./examples):
 | [`summarize-files.json`](./examples/summarize-files.json) | discover → `map` fan-out → `reduce` |
 | [`conditional-research.json`](./examples/conditional-research.json) | `when` routing + `join: any` + `gate` + `budget` |
 | [`guarded-refactor.json`](./examples/guarded-refactor.json) | `approval` (human-in-the-loop) + `retry` + `gate` |
+| [`dynamic-plan-execute.json`](./examples/dynamic-plan-execute.json) | `flow { def }` — plan then execute at runtime |
+| [`iterative-replan.json`](./examples/iterative-replan.json) | `loop` + `flow { def }` — iterative replanning |
 
 Copy one into `.pi/taskflows/<name>.json` (or `~/.pi/agent/taskflows/`) and it registers as `/tf:<name>` — or just point the model at it.
 
@@ -608,13 +727,13 @@ Copy one into `.pi/taskflows/<name>.json` (or `~/.pi/agent/taskflows/`) and it r
 
 <div align="center">
 
-**0 runtime dependencies** · **608 tests** · **9 phase types** · **cross-session resume** · **cross-run memoization** · **~7.7k LOC runtime**
+**0 runtime dependencies** · **670 tests** · **9 phase types** · **shared context tree** · **cross-session resume** · **cross-run memoization** · **detached execution** · **~9k LOC runtime**
 
 </div>
 
 - **Zero runtime dependencies.** No `dependencies` field — the runtime is built entirely on Node built-ins (`fs` / `path` / `os` / `child_process` / `crypto`). The file lock is `fs.openSync("wx")`, not a third-party library.
-- **608 tests across 26 test files** covering concurrency, atomic file locking (8-process race regressions), path-traversal hardening, cross-session resume, cross-run cache freshness (flow/thinking/tools key isolation, fingerprint invalidation, TTL/LRU eviction), gate verdicts, budget caps, retry/backoff, approval flows, loop termination, tournament judging, sub-flow composition, live run-history refresh, callback isolation, the idle watchdog, model-role init config, and parseModelFromLabel with parenthesized-model-name regression.
-- **Hardened by design.** Path-traversal defense (lexical + `realpath`), runId validation, HTML/error sanitization, atomic writes, stale-lock stealing via `rename`, and an idle watchdog that kills wedged subagents.
+- **670 tests across 33 test files** covering concurrency, atomic file locking (8-process race regressions), path-traversal hardening, cross-session resume, cross-run cache freshness (flow/thinking/tools key isolation, fingerprint invalidation, TTL/LRU eviction), gate verdicts, budget caps, retry/backoff, approval flows, loop termination, tournament judging, sub-flow composition, the shared context tree (blackboard reuse, supervision spawn, subflow validation/nesting), workspace isolation (temp/dedicated/worktree lifecycle, fail-open degrade, dynamic-flow rejection), dynamic sub-flow security hardening, detached execution (PID persistence, stale detection, crash→failed, resume after failure), live run-history refresh, callback isolation, the idle watchdog, model-role init config, parseModelFromLabel with parenthesized-model-name regression, and multi-fence `safeParse` recovery.
+- **Hardened by design.** Path-traversal defense (lexical + `realpath` containment check), runId validation, HTML/error sanitization, atomic writes, stale-lock stealing via `rename`, and an idle watchdog that kills wedged subagents (SIGTERM → SIGKILL after 5 minutes of silence). Dynamic sub-flows additionally get breadth caps, `cwd` containment, budget clamping, nesting depth caps, and prototype-pollution defense.
 - **Dogfooded.** Every new feature has to survive the project's own `self-improve` taskflow before it ships.
 
 ## 🍽️ We eat our own dog food
@@ -625,41 +744,50 @@ Our `self-improve` flow is a 10-phase DAG — it audits the codebase, patches de
 
 | Campaign | Scale | Phases | Outcome |
 |----------|-------|--------|---------|
-| [v0.0.8 dogfood](./docs/dogfooding-v0.0.8-report.md) | Full codebase audit → triage → fix → verify | 10 phases, 234 tests | 13 fixes, all pass |
-| [v0.0.6 self-audit](./docs/self-audit-report.md) | inventory → map audit → gate → approval → map fix → reduce | 9 phases | 11 critical defects fixed |
-| [Cross-run cache dogfood](./docs/rfc-cross-run-memoization.md) | Real runtime + on-disk store | Dedicated test harness | Cache correctness under adversarial fingerprints |
-| [Adversarial cross-review](./docs/brainstorm-adversarial-review-report.md) | Multi-agent adversarial review | `tournament` + `gate` | P0 cache-key fix shipped |
-| [Init redesign review](./docs/issue-necessity-review-report.md) | Necessity audit → parallel checks → verdict | 7 phases | Full redesign plan validated |
-| [Round 2 adversarial audit](./docs/internal/dogfooding-report.md) | Phase-by-phase DAG execution — 12 findings across runner/runtime/interpolate/verify | 14 phases | 10 fixes applied, 0 regressions |
+| [v0.0.8 dogfood](./docs/internal/dogfooding-v0.0.8-report.md) | Full codebase audit → triage → fix → verify | 10 phases, 234 tests | 13 fixes, all pass |
+| [v0.0.6 self-audit](./docs/internal/self-audit-report.md) | inventory → map audit → gate → approval → map fix → reduce | 9 phases | 11 critical defects fixed |
+| [Cross-run cache dogfood](./docs/internal/rfc-cross-run-memoization.md) | Real runtime + on-disk store | Dedicated test harness | Cache correctness under adversarial fingerprints |
+| [Adversarial cross-review](./docs/internal/brainstorm-adversarial-review-report.md) | Multi-agent adversarial review | `tournament` + `gate` | P0 cache-key fix shipped |
+| [Init redesign review](./docs/internal/issue-necessity-review-report.md) | Necessity audit → parallel checks → verdict | 7 phases | Full redesign plan validated |
+| [Round 2 adversarial audit](./docs/internal/dogfooding-report.md) | Integration layer + cross-module — 12 findings across runner/runtime/interpolate/verify | 14 phases | 10 fixes applied, 0 regressions |
 | [Round 3 adversarial audit](./docs/internal/dogfooding-report.md) | Integration layer + cross-module — 10 findings across index/agents/cache/render/runs-view | 9 phases | 10 fixes applied, 0 regressions |
+| [v0.0.23 Shared Context Tree](./docs/internal/dogfooding-report.md) | End-to-end validation: org-tree spawn, 5-way audit via loop+gate | 6 e2e runs | Spawn-drain bug fixed, 50 new tests |
 
 > **Meta:** we used `pi-taskflow`'s `map` fan-out, `gate` verdicts, `approval` human-in-the-loop, `tournament` best-of-N, `loop` until-done, and `cross-run` cache — to build `pi-taskflow`.
 
 ## Status & limits
 
-**v0.0.20** — loop-until-done (`loop` phase: iterate to a condition, convergence, or cap), tournament (best-of-N with a judge), cross-run memoization (content-addressed cache with git/file/glob/env fingerprints and TTL), interactive `/tf init` with role-aware model pickers + diff preview + atomic merge-write, configurable built-in agents, 18 built-in agents with 6 model roles. Full control-flow & reliability layer (`when` guards, `join: any`, `retry`/backoff, `approval`, `flow` composition, `budget` caps, idle watchdog) on top of the DSL + DAG runtime (`agent`/`parallel`/`map`/`gate`/`reduce`). Inline + saved flows, cross-session resume, live progress, and isolated context. A run executes as one streaming tool call.
+**v0.0.23** — **Shared Context Tree**: opt-in (`shareContext` / `contextSharing`) blackboard + supervision tools (`ctx_read`/`ctx_write` horizontal reuse, `ctx_report`/`ctx_spawn` vertical supervision); `ctx_spawn` accepts a flat task **or** a dependency-bearing `subflow` (a runtime-validated nested DAG), depth-capped on a unified nesting counter with budget accounting. **Workspace isolation**: a phase's `cwd` accepts reserved keywords `temp`/`dedicated`/`worktree` — the runtime allocates an isolated dir (or a git worktree on a throwaway branch) and tears it down after the phase, fail-open, rejected in LLM-authored sub-flows. Prior: loop-until-done (`loop`), tournament (best-of-N with a judge), cross-run memoization (content-addressed cache with git/file/glob/env fingerprints and TTL), interactive `/tf init`, configurable built-in agents, 18 built-in agents with 6 model roles. Full control-flow & reliability layer (`when` guards, `join: any`, `retry`/backoff, `approval`, `flow` composition, `budget` caps, `onBlock: "retry"`, `eval` machine gates, idle watchdog) on top of the DSL + DAG runtime (`agent`/`parallel`/`map`/`gate`/`reduce`). Inline + saved flows, cross-session resume, live progress, and isolated context. A run executes as one streaming tool call.
 
 Known boundaries (tracked, bounded — no surprises mid-flow):
 
-- **Detached background execution (new).** Add `detach: true` to `action: "run"` to spawn the flow in a detached child process. The tool returns immediately with the `runId`; the flow continues running even if the host session exits. Status is polled via the store (`/tf runs` or `action: "resume"`). Approval phases auto-reject in detached mode.
+- **Shared context is opt-in.** Subagents share nothing unless a phase sets `shareContext` (or the flow sets `contextSharing`). The blackboard is per-run, file-based, size-bounded, and cleaned up with the run. Spawn nesting is capped at `MAX_DYNAMIC_NESTING` (5). A spawned flat task is not individually checkpointed — on crash it re-runs on resume (spawned *subflows* resume their completed inner phases via the cache).
+- **Workspace isolation is fail-open.** `cwd: "worktree"` requires the base cwd to be a git work tree; otherwise it degrades to a `temp` dir (with a warning). `temp`/`worktree` dirs are removed when the phase ends — a hard crash mid-phase may leave a stray dir (cleaned on the next run for `dedicated`; `temp`/`worktree` are under the OS tmpdir). The reserved keywords are honoured only in author-written flows.
 - **No `output: "file"`.** Outputs are text/JSON only — write files via an agent's `write` tool call.
 - **`map` requires a JSON array.** The `over` field must resolve to a `{steps.ID.json}` array. Wrap a text list in a single-agent `output: "json"` phase first.
 - **The DAG must be acyclic.** Cycles are rejected at validation.
+- **Cross-run cache excludes `gate`, `approval`, `loop`, and `tournament`.** These must produce a fresh result each run.
+- **Approval auto-rejects in detached mode.** This is a safety invariant — approval gates are never silently bypassed.
 
 ## Development
 
 ```bash
 npm install
-npm run typecheck
-npm test            # unit tests — no network, no process spawning
-npm run test:e2e    # real end-to-end (spawns live subagents; needs model access)
+npm run typecheck     # tsc --noEmit
+npm test              # unit tests — no network, no process spawning
+npm run test:e2e      # real end-to-end (spawns live subagents; needs model access)
+npm run test:e2e-context
+npm run test:e2e-context-value
+npm run test:e2e-team
+npm run test:e2e-spawn-subflow
+npm run test:dogfood-cache
 ```
 
 Runtime lives in `extensions/`, tests in `test/`, and runnable examples in `examples/`.
 
 ## Contributing
 
-Contributions welcome — this is a young, fast-moving project. Open an issue or PR on [GitHub](https://github.com/heggria/pi-taskflow). Good first contributions: new example flows, phase-type ideas, and TUI polish.
+Contributions welcome — this is a young, fast-moving project. Open an issue or PR on [GitHub](https://github.com/heggria/pi-taskflow). Good first contributions: new example flows, phase-type ideas, and TUI polish. See [`CONTRIBUTING.md`](./CONTRIBUTING.md) and [`AGENTS.md`](./AGENTS.md) for coding conventions and common task recipes.
 
 ## License
 
