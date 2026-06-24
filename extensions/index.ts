@@ -83,7 +83,7 @@ const ShorthandStep = Type.Object(
 );
 
 const TaskflowParams = Type.Object({
-	action: StringEnum(["run", "save", "resume", "list", "agents", "init", "verify", "compile", "cache-clear"] as const, {
+	action: StringEnum(["run", "save", "resume", "list", "agents", "init", "verify", "compile", "provenance", "cache-clear"] as const, {
 		description: "What to do: run a flow, save a definition, resume a paused run, list saved flows, list available agents, init model role configuration, verify the DAG, compile the DAG to a Mermaid diagram + verification report, or clear the cross-run memoization cache",
 		default: "run",
 	}),
@@ -145,6 +145,32 @@ const TaskflowParams = Type.Object({
 		}),
 	),
 });
+
+function formatProvenance(run: RunState): string {
+	const lines: string[] = [];
+	lines.push(`Provenance — run ${run.runId} · flow "${run.flowName}" · ${run.status}`);
+	lines.push("");
+	const finalIds = new Set(run.def.phases.filter((p) => p.final).map((p) => p.id));
+	const phases = Object.values(run.phases);
+	const any = phases.some((p) => p.reads && p.reads.length > 0);
+	if (!any) {
+		lines.push(
+			"(No observed readSets recorded. Reads are captured for agent/gate/reduce phases that interpolate {steps.*} — the overstory \"observed readSet@version\" moat.)",
+		);
+		return lines.join("\n");
+	}
+	for (const p of phases) {
+		const reads = p.reads ?? [];
+		lines.push(`■ ${p.id}  [${p.status}]${finalIds.has(p.id) ? " ★ final" : ""}`);
+		if (reads.length) {
+			lines.push("   observed reads:");
+			for (const r of reads) lines.push(`     ← ${r.stepId}@${r.version ?? "?"}`);
+		} else {
+			lines.push("   (source — no upstream reads)");
+		}
+	}
+	return lines.join("\n");
+}
 
 function makeRunState(def: Taskflow, args: Record<string, unknown>, cwd: string): RunState {
 	return {
@@ -629,6 +655,17 @@ export default function (pi: ExtensionAPI) {
 				return finalResult(action, result);
 			}
 
+			if (action === "provenance") {
+				if (!params.runId)
+					return errorResult(action, "action=provenance requires 'runId'");
+				const run = loadRun(ctx.cwd, params.runId);
+				if (!run) return errorResult(action, `Run not found: ${params.runId}`);
+				return {
+					content: [{ type: "text", text: formatProvenance(run) }],
+					details: { action } satisfies TaskflowDetails,
+				};
+			}
+
 			// resolve the definition: inline `define` / shorthand (single|parallel|chain), else saved `name`.
 			let def: Taskflow | undefined;
 
@@ -822,7 +859,7 @@ export default function (pi: ExtensionAPI) {
 	pi.registerCommand("tf", {
 		description: "Taskflow: list | run <name> | show <name> | compile <name> | runs | init",
 		getArgumentCompletions: (prefix) => {
-			const subs = ["list", "run", "show", "runs", "resume", "init", "save", "verify", "compile"];
+			const subs = ["list", "run", "show", "runs", "resume", "init", "save", "verify", "compile", "provenance"];
 			const items = subs.map((s) => ({ value: s, label: s }));
 			const filtered = items.filter((i) => i.value.startsWith(prefix));
 			return filtered.length > 0 ? filtered : null;
@@ -875,6 +912,20 @@ export default function (pi: ExtensionAPI) {
 				const { compileTaskflow } = await import("./compile.ts");
 				const compiled = compileTaskflow(flow.def, { direction });
 				ctx.ui.notify(compiled.markdown, compiled.verification.ok ? "info" : "warning");
+				return;
+			}
+
+			if (sub === "provenance") {
+				if (!arg) {
+					ctx.ui.notify("Usage: /tf provenance <runId>", "warning");
+					return;
+				}
+				const run = loadRun(ctx.cwd, arg);
+				if (!run) {
+					ctx.ui.notify(`Run not found: ${arg}`, "error");
+					return;
+				}
+				ctx.ui.notify(formatProvenance(run), "info");
 				return;
 			}
 

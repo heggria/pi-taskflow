@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { coerceArray, interpolate, safeParse } from "../extensions/interpolate.ts";
+import { coerceArray, evaluateCondition, interpolate, safeParse } from "../extensions/interpolate.ts";
 
 test("interpolate: args, steps.output, steps.json, previous, locals", () => {
 	const ctx = {
@@ -89,4 +89,45 @@ test("coerceArray: arrays and wrapped arrays", () => {
 	assert.deepEqual(coerceArray({ results: [{ x: 1 }] }), [{ x: 1 }]);
 	assert.equal(coerceArray({ nope: 1 }), null);
 	assert.equal(coerceArray("string"), null);
+});
+
+// ---------------------------------------------------------------------------
+// M3: observed-read hook (onRead)
+// ---------------------------------------------------------------------------
+
+test("interpolate: onRead fires only on successful resolution", () => {
+	const calls: string[] = [];
+	const ctx = {
+		args: { dir: "src" },
+		steps: { a: { output: "OUT" }, b: { output: '{"k":1}' } },
+		previousOutput: "PREV",
+		onRead: (ref: string) => calls.push(ref),
+	};
+	interpolate(
+		"a={steps.a.output} b={steps.b.json.k} ghost={steps.ghost.output} arg={args.dir} prev={previous.output}",
+		ctx,
+	);
+	// Every successfully-resolved ref is recorded…
+	assert.deepEqual([...calls].sort(), ["args.dir", "previous.output", "steps.a.output", "steps.b.json.k"]);
+	// …but the unresolved ref is NOT (it becomes a `missing` warning instead).
+	assert.ok(!calls.includes("steps.ghost.output"));
+});
+
+test("interpolate: onRead is optional (default undefined → no throw)", () => {
+	const ctx = { args: {}, steps: { a: { output: "x" } } };
+	assert.equal(interpolate("{steps.a.output}", ctx).text, "x");
+});
+
+test("interpolate: condition evaluation records reads via onRead too", () => {
+	const calls: string[] = [];
+	const ctx = {
+		args: { force: "true" },
+		steps: { triage: { output: '{"route":"deep"}', json: { route: "deep" } } },
+		onRead: (r: string) => calls.push(r),
+	};
+	// `&&` short-circuits, but both refs resolve before the boolean fold, so
+	// both are observed reads of this condition.
+	evaluateCondition("{steps.triage.json.route} == deep && {args.force} != true", ctx);
+	assert.ok(calls.includes("steps.triage.json.route"));
+	assert.ok(calls.includes("args.force"));
 });

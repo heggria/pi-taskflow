@@ -943,3 +943,50 @@ test("runtime: unresolved interpolation refs are surfaced as a phase warning", a
 		console.warn = origWarn;
 	}
 });
+
+test("runtime: agent phase records its observed readSet with versions (M3)", async () => {
+	const def: Taskflow = {
+		name: "provenance",
+		phases: [
+			{ id: "scout", type: "agent", agent: "a", task: "scan" },
+			{ id: "plan", type: "agent", agent: "a", task: "plan from {steps.scout.output}", dependsOn: ["scout"], final: true },
+		],
+	};
+	const runner = mockRunner((t) => `out:${t}`, {});
+	const state = mkState(def);
+	const res = await executeTaskflow(state, baseDeps(runner));
+	assert.equal(res.ok, true);
+
+	// `plan` consumed scout's output → its observed readSet records exactly that,
+	// tagged with scout's inputHash as the version it read (the overstory
+	// "observed readSet@version" moat — what the result ACTUALLY depended on).
+	const plan = state.phases.plan;
+	assert.ok(plan.reads, "plan recorded an observed readSet");
+	assert.equal(plan.reads!.length, 1);
+	assert.equal(plan.reads![0].stepId, "scout");
+	assert.equal(plan.reads![0].version, state.phases.scout.inputHash, "version = scout's inputHash");
+
+	// `scout` has no {steps.*} in its task → no observed reads.
+	assert.ok(!state.phases.scout.reads || state.phases.scout.reads.length === 0);
+});
+
+test("runtime: map phase records observed readSet of its over-source (M3)", async () => {
+	const def: Taskflow = {
+		name: "map-prov",
+		phases: [
+			{ id: "list", type: "agent", agent: "a", task: "list", output: "json" },
+			{ id: "m", type: "map", over: "{steps.list.json}", agent: "a", task: "audit {item}", dependsOn: ["list"], final: true },
+		],
+	};
+	// `list` returns a JSON array; the map fans out one audit per item.
+	const runner = mockRunner((t) => (t === "list" ? '["x","y"]' : `audited:${t}`), {});
+	const state = mkState(def);
+	const res = await executeTaskflow(state, baseDeps(runner));
+	assert.equal(res.ok, true);
+	// The map consumed `list` (via `over`) → its observed readSet records that,
+	// tagged with list's inputHash (so fan-out results carry provenance too).
+	const m = state.phases.m;
+	assert.ok(m.reads, "map recorded an observed readSet");
+	assert.ok(m.reads!.some((r) => r.stepId === "list"), "map recorded it read `list`");
+	assert.equal(m.reads!.find((r) => r.stepId === "list")?.version, state.phases.list.inputHash);
+});

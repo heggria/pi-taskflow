@@ -75,6 +75,7 @@ function buildInterpolationContext(
 	state: RunState,
 	previousOutput: string | undefined,
 	locals?: Record<string, unknown>,
+	onRead?: (ref: string) => void,
 ): InterpolationContext {
 	const steps: Record<string, { output: string; json?: unknown }> = {};
 	for (const [id, ps] of Object.entries(state.phases)) {
@@ -91,7 +92,7 @@ function buildInterpolationContext(
 			}
 		}
 	}
-	return { args: state.args, steps, previousOutput, locals };
+	return { args: state.args, steps, previousOutput, locals, onRead };
 }
 
 function resultToPhaseState(id: string, r: RunResult, inputHash: string, parseJson: boolean): PhaseState {	const failed = isFailed(r);
@@ -114,6 +115,27 @@ function resultToPhaseState(id: string, r: RunResult, inputHash: string, parseJs
 		inputHash,
 		endedAt: Date.now(),
 	};
+}
+
+/** Convert observed read refs (e.g. "steps.scout.output") into a structured
+ *  readSet keyed by upstream phase id, tagging each with the version
+ *  (= inputHash) that was current when read. Only `steps.*` refs are upstream
+ *  phase dependencies; args/item/previous are invocation/loop values. */
+function readRefsToReads(
+	refs: string[],
+	state: RunState,
+): Array<{ stepId: string; version?: string }> {
+	const out: Array<{ stepId: string; version?: string }> = [];
+	const seen = new Set<string>();
+	for (const ref of refs) {
+		const m = /^steps\.([A-Za-z0-9_-]+)\b/.exec(ref);
+		if (!m) continue;
+		const stepId = m[1] as string;
+		if (seen.has(stepId)) continue;
+		seen.add(stepId);
+		out.push({ stepId, version: state.phases[stepId]?.inputHash });
+	}
+	return out;
 }
 
 /**
@@ -632,7 +654,14 @@ async function executePhaseInner(
 	// Resolve context pre-read files once, before any type branching.
 	// The content is prepended to every task so the subagent never spends
 	// turns on file exploration for files the flow author already knows.
-	const ctx = buildInterpolationContext(state, previousOutput);
+	// M3 observed-readSet: collect every upstream ref this phase resolves, so we
+	// can record what its result ACTUALLY depended on (not just its declared
+	// dependsOn). Shared by every interpolation in this phase (task / when / …).
+	const readRefs: string[] = [];
+	const onRead = (ref: string): void => {
+		readRefs.push(ref);
+	};
+	const ctx = buildInterpolationContext(state, previousOutput, undefined, onRead);
 	const preRead = await resolvePhaseContext(phase, ctx);
 
 	// Resolve this phase's cache policy once. Default scope is "run-only" (the
@@ -875,6 +904,7 @@ async function executePhaseInner(
 
 		const r = await runOne(agentName, fullTask, liveSink(state, phase.id, emitProgress), nodeIdFor());
 		const ps = resultToPhaseState(phase.id, r, inputHash, parseJson);
+		if (readRefs.length) ps.reads = readRefsToReads(readRefs, state);
 		if (refWarning) ps.warnings = [...(ps.warnings ?? []), refWarning];
 		if (type === "gate" && ps.status === "done") ps.gate = parseGateVerdict(r.output);
 
@@ -956,6 +986,7 @@ async function executePhaseInner(
 
 		const results = await runFanout(branches);
 		const ps = mergePhaseState(phase.id, results, inputHash, parseJson);
+		if (readRefs.length) ps.reads = readRefsToReads(readRefs, state);
 		recordCache(cc, ps);
 		return ps;
 	}
@@ -984,7 +1015,7 @@ async function executePhaseInner(
 		}
 		const loopVar = phase.as ?? "item";
 		const tasks = arr.map((item) => {
-			const localCtx = buildInterpolationContext(state, previousOutput, { [loopVar]: item });
+			const localCtx = buildInterpolationContext(state, previousOutput, { [loopVar]: item }, onRead);
 			return {
 				agent: resolveAgent(phase.agent, deps, state),
 				task: preRead + interpolate(phase.task ?? "", localCtx).text,
@@ -996,6 +1027,7 @@ async function executePhaseInner(
 
 		const results = await runFanout(tasks);
 		const ps = mergePhaseState(phase.id, results, inputHash, parseJson);
+		if (readRefs.length) ps.reads = readRefsToReads(readRefs, state);
 		if (mapTruncated) {
 			ps.warnings = [...(ps.warnings ?? []), `map fan-out truncated to MAX_DYNAMIC_MAP_ITEMS (${MAX_DYNAMIC_MAP_ITEMS}) inside a dynamic sub-flow`];
 			// NB: do NOT set ps.budgetTruncated — that field drives the run-level

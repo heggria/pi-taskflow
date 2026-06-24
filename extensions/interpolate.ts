@@ -21,6 +21,12 @@ export interface InterpolationContext {
 	previousOutput?: string;
 	/** loop variable bindings, e.g. { item: {...} } */
 	locals?: Record<string, unknown>;
+	/** Observed-read hook (M3): invoked once per successfully-resolved
+	 *  placeholder path, so the runtime can capture which upstream phases a
+	 *  phase actually consumed (its observed readSet). Unresolved refs do NOT
+	 *  fire it (they become `missing` warnings instead). Default undefined →
+	 *  zero overhead, fully backward-compatible. */
+	onRead?: (ref: string) => void;
 }
 
 const PLACEHOLDER = /\{([a-zA-Z0-9_-]+(?:\.[a-zA-Z0-9_-]+)*)\}/g;
@@ -48,7 +54,18 @@ export function interpolate(
 	return { text, missing };
 }
 
+/** Resolve + record an observed read (M3 observed-readSet). Fires only on
+ *  successful resolution so an unresolved ref is NOT logged as a dependency
+ *  (it stays a `missing` warning). The runtime threads a collector here to
+ *  capture which upstream phases this phase actually consumed — the overstory
+ *  "observed readSet@version" moat (nobody else records this). */
 function resolvePath(path: string, ctx: InterpolationContext): unknown {
+	const value = _resolvePath(path, ctx);
+	if (value !== undefined) ctx.onRead?.(path);
+	return value;
+}
+
+function _resolvePath(path: string, ctx: InterpolationContext): unknown {
 	const parts = path.split(".");
 	const head = parts[0];
 

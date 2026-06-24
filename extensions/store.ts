@@ -70,6 +70,14 @@ export interface PhaseState {
 	/** Non-fatal diagnostic warnings accumulated during this phase (e.g.
 	 *  unresolved interpolation placeholders, suspicious templates). */
 	warnings?: string[];
+	/** Observed readSet (M3): the upstream phase outputs this phase actually
+	 *  consumed at interpolation time — not what it *declared* to depend on
+	 *  (dependsOn), but what it truly *read* (`{steps.X...}`). Each entry
+	 *  carries the version (= the read phase's inputHash) it consumed, so a
+	 *  later staleness check (M4/M5) can tell whether the upstream has moved.
+	 *  This is the overstory "observed readSet@version" moat: no other
+	 *  orchestrator records what a result actually depended on. */
+	reads?: Array<{ stepId: string; version?: string }>;
 	/** Truncated previews of interpolated strings used to execute this phase,
 	 *  useful when diagnosing why a model saw a literal placeholder. */
 	interpolation?: Array<{ source: string; text: string; missing?: string[] }>;
