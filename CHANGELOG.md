@@ -2,6 +2,58 @@
 
 All notable changes to pi-taskflow are documented here. This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 
+## [0.0.25] — 2026-06-24
+
+> Correctness release: **incremental recompute is now trustworthy.** `/tf
+> recompute` shipped in the prior line as a promising idea — force-rerun a seed,
+> walk its stale frontier, let the cache cut off untouched downstreams. But the
+> dependency graph it walked was a half-truth: reads observed only inside a
+> `when` guard or an `eval` gate were never recorded, a loop that read its own
+> output **deadlocked the scheduler**, and a `{previous.output}` chain could be
+> silently skipped — each one a path where "only rerun what changed" quietly
+> reused **stale** upstream state and returned a wrong answer that *looked*
+> incrementally correct. This release closes all of them: the observed readSet
+> is now complete, the recompute order unions declared **and** observed edges,
+> and real (`dryRun:false`) recomputation refuses to run when it cannot prove
+> the frontier is sound. The headline feature finally earns its safety claim —
+> the difference between *looks* incremental and *provably* incremental.
+
+### Added
+- **Safety guard for real recomputation.** `recomputeTaskflow` with `dryRun:false`
+  now refuses to run flows whose dependencies cannot be fully observed through
+  the captured readSet: Shared Context Tree (`shareContext` / `contextSharing`),
+  `flow` phases, `context:` file pre-reads, and interpolation placeholders such
+  as `{previous.output}`, `{args.X}`, or `{item.X}`. This prevents silently
+  reusing stale upstream state.
+- **Regression tests** in `test/recompute.test.ts`:
+  - observed-read edges still order recomputation even without an explicit
+    `dependsOn` declaration;
+  - `{previous.output}` chains are rejected for real recomputation;
+  - `recomputeTaskflow` returns a fresh `RunState` and does not mutate the
+    caller's state.
+
+### Fixed
+- **Loop self-read no longer deadlocks recompute.** A loop whose `until`
+  condition references its own prior output (e.g. `{steps.refine.output}`)
+  produced a self-edge in the observed-dependency graph, causing `topoLayers` to
+  schedule the phase with a permanently non-zero indegree. `observedDeps()` now
+  filters self-references so scheduling remains sound.
+- **`when` condition upstream reads are captured.** Conditions are now evaluated
+  inside `executePhaseInner` with the same `onRead` hook used by the phase task,
+  so upstream refs observed only in a `when` guard are recorded in
+  `PhaseState.reads`.
+- **Gate `eval` upstream reads are captured.** The machine-check `eval` branch
+  now receives the shared `onRead` hook, and the resulting readSet is persisted
+  when an eval-only gate skips the LLM call.
+- **Recompute topo-order now unions declared and observed edges.** Previously
+  the recompute order only respected declared `dependsOn`, which could place a
+  downstream phase before its observed-but-not-declared upstream refreshed and
+  cause false early-cutoff. The scheduling graph now merges both edge sets.
+- **Recompute no longer mutates the caller's RunState.** `recomputeTaskflow`
+  clones the input state via `structuredClone` before modifying it.
+- **Help text accuracy.** `/tf` command and tool-action descriptions updated to
+  match the new `recompute` and provenance behavior.
+
 ## [0.0.24] — 2026-06-23
 
 > Feature release: **`/tf compile`** — turn the declared DAG into a Mermaid
