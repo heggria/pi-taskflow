@@ -89,6 +89,12 @@ export interface RunState {
 	pid?: number;
 	/** True for runs spawned via `detach: true` (background execution). */
 	detached?: boolean;
+	/** Content fingerprint of the desugared flow definition (overstory hash
+	 *  algorithm). Folded into every phase's cache key so a structural change
+	 *  to the flow always invalidates cross-run cache hits — and an identical
+	 *  re-run always reuses them. Filled once at run start; persisted for
+	 *  audit/resume consistency. */
+	flowDefHash?: string;
 }
 
 // ---------------------------------------------------------------------------

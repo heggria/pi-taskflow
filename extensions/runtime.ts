@@ -20,6 +20,7 @@ import { type Budget, type CacheScope, dependenciesOf, finalPhase, LOOP_DEFAULT_
 import { verifyTaskflow } from "./verify.ts";
 import { hashInput, newRunId, type PhaseState, type RunState, runsDir } from "./store.ts";
 import { CacheStore, resolveFingerprint } from "./cache.ts";
+import { flowDefHash } from "./flowir/hash.ts";
 import { ctxDirFor, drainPendingSpawns, initCtxDir, registerNode, setNodeStatus, type SpawnAssignment } from "./context-store.ts";
 import { allocateWorkspace, isWorkspaceKeyword, type Workspace } from "./workspace.ts";
 
@@ -647,6 +648,7 @@ async function executePhaseInner(
 		phaseId: phase.id,
 		flowName: state.flowName,
 		runId: state.runId,
+		flowDefHash: state.flowDefHash,
 		thinking: phase.thinking,
 		tools: phase.tools,
 		preRead,
@@ -1007,7 +1009,7 @@ async function executePhaseInner(
 	if (type === "approval") {
 		const ctx = buildInterpolationContext(state, previousOutput);
 		const message = interpolate(phase.task ?? "Approve to continue?", ctx).text;
-		const inputHash = hashInput(phase.id, phase.model ?? "", "approval", message);
+		const inputHash = cacheKey(cc, [phase.id, phase.model ?? "", "approval", message]);
 		const cached = cachedPhase(cc, inputHash);
 		if (cached) return cached;
 
@@ -1509,6 +1511,10 @@ interface PhaseCacheCtx {
 	 *  whether a given branch happens to fold preRead into its task string
 	 *  (previously this was only incidentally true via `fullTask`). */
 	preRead?: string;
+	/** Content fingerprint of the desugared flow definition — folded into the
+	 *  key so two structurally-different flows that share a name can never
+	 *  collide, and a changed flow never serves a stale cross-run hit. */
+	flowDefHash?: string;
 }
 
 /** Fold the phase fingerprint into the base hash parts to form the final cache key. */
@@ -1519,6 +1525,7 @@ function cacheKey(cc: PhaseCacheCtx, baseParts: string[]): string {
 	// resolved context pre-read content, and the world-state fingerprint.
 	const parts = [
 		`flow:${cc.flowName}`,
+		`flowdef:${cc.flowDefHash ?? ""}`,
 		...baseParts,
 		`think:${cc.thinking ?? ""}`,
 		`tools:${JSON.stringify(cc.tools ?? [])}`,
@@ -1726,6 +1733,18 @@ export async function executeTaskflow(state: RunState, deps: RuntimeDeps): Promi
 async function runTaskflowLayers(state: RunState, deps: RuntimeDeps): Promise<RuntimeResult> {
 	const def: Taskflow = state.def;
 	const layers = topoLayers(def.phases);
+	// Content-fingerprint the desugared definition ONCE per run and fold it into
+	// every phase's cache key (overstory hash algorithm; see ./flowir/hash.ts).
+	// Reused by every phase, persisted on the RunState for audit/resume.
+	// Never throws into the run — a hash failure leaves the field unset and the
+	// cache key degrades to the legacy flowName-only shape.
+	if (state.flowDefHash === undefined) {
+		try {
+			state.flowDefHash = await flowDefHash(def);
+		} catch {
+			/* leave undefined → cache key degrades to legacy flowName-only shape */
+		}
+	}
 
 	state.status = "running";
 	safeEmit(deps, state);
