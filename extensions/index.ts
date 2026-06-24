@@ -83,8 +83,8 @@ const ShorthandStep = Type.Object(
 );
 
 const TaskflowParams = Type.Object({
-	action: StringEnum(["run", "save", "resume", "list", "agents", "init", "verify", "cache-clear"] as const, {
-		description: "What to do: run a flow, save a definition, resume a paused run, list saved flows, list available agents, init model role configuration, or clear the cross-run memoization cache",
+	action: StringEnum(["run", "save", "resume", "list", "agents", "init", "verify", "compile", "cache-clear"] as const, {
+		description: "What to do: run a flow, save a definition, resume a paused run, list saved flows, list available agents, init model role configuration, verify the DAG, compile the DAG to a Mermaid diagram + verification report, or clear the cross-run memoization cache",
 		default: "run",
 	}),
 	name: Type.Optional(Type.String({ description: "Name of a saved flow (for run/save without inline define)" })),
@@ -402,6 +402,7 @@ export default function (pi: ExtensionAPI) {
 			"Every delegation is tracked (runId), resumable across sessions, and saveable as /tf:<name> via action=save.",
 			"Use action=agents to list the 18 built-in agents (executor, scout, planner, analyst, critic, reviewer, risk-reviewer, security-reviewer, plan-arbiter, final-arbiter, test-engineer, doc-writer, executor-code, executor-fast, executor-ui, recover, verifier, visual-explorer). Do NOT invent agent names.",
 			"Phase types: agent, parallel (static branches), map (dynamic fan-out over array), gate (VERDICT: PASS/BLOCK), reduce (aggregate from N), approval (human-in-the-loop), flow (run saved sub-flow), loop (iterate until condition/convergence/cap), tournament (N variants, judge picks best/aggregate).",
+			"Use action=compile to generate a Mermaid diagram + verification report from a saved or inline flow — 0 tokens.",
 			"Interpolation: {args.X}, {steps.ID.output}, {steps.ID.json}, {item} (map), {previous.output}.",
 		].join(" "),
 		parameters: TaskflowParams,
@@ -568,6 +569,46 @@ export default function (pi: ExtensionAPI) {
 					lines.push(result.ok ? "Status: PASS (no errors)" : "Status: FAIL (errors found)");
 				}
 				return { content: [{ type: "text", text: lines.join("\n") }], details: { action } satisfies TaskflowDetails };
+			}
+
+			if (action === "compile") {
+				const { compileTaskflow } = await import("./compile.ts");
+				// Resolve definition: inline define (object or JSON/fenced string) then saved name.
+				let def: Taskflow | undefined;
+				let resolvedDefine: unknown = params.define;
+				if (typeof resolvedDefine === "string") {
+					const parsed = safeParse(resolvedDefine);
+					if (parsed && typeof parsed === "object") resolvedDefine = parsed;
+				}
+				if (resolvedDefine) {
+					const d = resolvedDefine as Record<string, unknown>;
+					if (typeof d === "object" && d !== null && Array.isArray(d.phases)) {
+						def = d as unknown as Taskflow;
+					} else if (isShorthand(resolvedDefine)) {
+						try {
+							def = desugar(resolvedDefine) as Taskflow;
+						} catch (e) {
+							return errorResult(action, `Invalid shorthand: ${e instanceof Error ? e.message : String(e)}`);
+						}
+					}
+				} else if (params.name) {
+					const saved = getFlow(ctx.cwd, params.name);
+					if (saved) def = saved.def;
+				}
+				if (!def) {
+					return errorResult(action, "Provide 'define' (DSL) or 'name' (saved flow) to compile.");
+				}
+				// Schema validation first so a malformed graph gives a clean error
+				// rather than a half-rendered diagram.
+				const vr = validateTaskflow(def, { cwd: ctx.cwd ? String(ctx.cwd) : undefined });
+				if (!vr.ok) {
+					return errorResult(action, `Schema validation failed:\n${vr.errors.join("\n")}`);
+				}
+				const compiled = compileTaskflow(def);
+				return {
+					content: [{ type: "text", text: compiled.markdown }],
+					details: { action } satisfies TaskflowDetails,
+				};
 			}
 
 			if (action === "cache-clear") {
@@ -779,9 +820,9 @@ export default function (pi: ExtensionAPI) {
 
 	// ---- The /tf user command ----
 	pi.registerCommand("tf", {
-		description: "Taskflow: list | run <name> | show <name> | runs | init",
+		description: "Taskflow: list | run <name> | show <name> | compile <name> | runs | init",
 		getArgumentCompletions: (prefix) => {
-			const subs = ["list", "run", "show", "runs", "resume", "init", "save", "verify"];
+			const subs = ["list", "run", "show", "runs", "resume", "init", "save", "verify", "compile"];
 			const items = subs.map((s) => ({ value: s, label: s }));
 			const filtered = items.filter((i) => i.value.startsWith(prefix));
 			return filtered.length > 0 ? filtered : null;
@@ -807,6 +848,33 @@ export default function (pi: ExtensionAPI) {
 					return;
 				}
 				ctx.ui.notify(JSON.stringify(flow.def, null, 2), "info");
+				return;
+			}
+
+			if (sub === "compile") {
+				if (!arg) {
+					ctx.ui.notify("Usage: /tf compile <name> [lr|td]", "warning");
+					return;
+				}
+				// `arg` may carry an optional direction suffix: "<name> lr" / "<name> td".
+				const parts = arg.trim().split(/\s+/);
+				const flowName = parts[0];
+				const direction = parts[1]?.toLowerCase() === "lr" ? "LR" : "TD";
+				const flow = getFlow(ctx.cwd, flowName);
+				if (!flow) {
+					ctx.ui.notify(`Flow not found: ${flowName}`, "error");
+					return;
+				}
+				// Schema-validate before compiling so a malformed saved flow yields a
+				// clean error rather than a half-rendered diagram (mirrors the tool action).
+				const vr = validateTaskflow(flow.def, { cwd: ctx.cwd ? String(ctx.cwd) : undefined });
+				if (!vr.ok) {
+					ctx.ui.notify(`Schema validation failed:\n${vr.errors.join("\n")}`, "error");
+					return;
+				}
+				const { compileTaskflow } = await import("./compile.ts");
+				const compiled = compileTaskflow(flow.def, { direction });
+				ctx.ui.notify(compiled.markdown, compiled.verification.ok ? "info" : "warning");
 				return;
 			}
 

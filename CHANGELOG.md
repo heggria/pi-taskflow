@@ -2,6 +2,43 @@
 
 All notable changes to pi-taskflow are documented here. This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 
+## [0.0.24] — 2026-06-23
+
+> Feature release: **`/tf compile`** — turn the declared DAG into a Mermaid
+> diagram plus a verification overlay for 0 tokens. A picture of the plan, a
+> structural audit of the plan, and a GitHub-pastable artifact — all from the
+> same JSON.
+
+### Added
+- **`compile` action** for the `taskflow` tool and the `/tf compile <name>`
+  command. Renders the flow as a Mermaid `flowchart`, overlays verification
+  issues onto the nodes (red = error, amber = warning, green border = final),
+  and emits a markdown document suitable for READMEs / issues / PRs.
+- Distinct shapes for every phase kind: agent ▭, parallel/map/flow ⊐, reduce ▽,
+  gate ◇, approval ⏸, loop ↻, tournament ⬡. Guards become edge labels;
+  `join: "any"` becomes dotted edges.
+- Reuses the existing `verifyTaskflow` graph analysis, so every dead-end,
+  unreachable node, gate-exhaustion, budget overflow, concurrency warning, and
+  guard contradiction is painted directly on the diagram.
+- Zero runtime dependencies; the compiler is a pure function with no LLM calls.
+- Tests: 670 → 702 (+32) in `test/compile.test.ts` — structural assertions on
+  the emitted Mermaid tokens (no third-party parser dependency; render-
+  correctness is validated by shape/edge/class assertions).
+
+### Fixed
+- **Id collisions no longer merge nodes.** Two distinct phase ids that
+  sanitize to the same Mermaid token (e.g. `audit-each` and `audit_each`) are
+  now disambiguated with a `_2` suffix instead of collapsing into one node with
+  an accidental self-loop.
+- **Markdown-injection hardening.** Free-form strings (flow name, description,
+  verification messages) are neutralized before interpolation, so a
+  multi-line / bracket-laden name can no longer break out of the H1 heading or
+  spawn a second blockquote.
+- **`/tf compile <name>` now schema-validates first**, matching the tool action
+  — a malformed saved flow yields a clean error instead of a half-rendered
+  diagram. An optional `lr`/`td` suffix selects diagram direction.
+- Backslashes are now escaped inside Mermaid labels.
+
 ## [0.0.23] — 2026-06-11
 
 > Feature release: the **Shared Context Tree** — an opt-in mechanism that gives

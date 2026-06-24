@@ -8,7 +8,7 @@
   <a href="./LICENSE"><img src="https://img.shields.io/badge/license-MIT-43D9AD?style=flat-square" alt="MIT license"></a>
   <a href="#whats-inside"><img src="https://img.shields.io/badge/runtime%20deps-0-43D9AD?style=flat-square" alt="zero runtime dependencies"></a>
   <a href="https://github.com/heggria/pi-taskflow/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/heggria/pi-taskflow/ci.yml?branch=main&style=flat-square&label=CI" alt="CI status"></a>
-  <a href="#whats-inside"><img src="https://img.shields.io/badge/tests-670-6E8BFF?style=flat-square" alt="670 tests"></a>
+  <a href="#whats-inside"><img src="https://img.shields.io/badge/tests-702-6E8BFF?style=flat-square" alt="702 tests"></a>
   <a href="#whats-inside"><img src="https://img.shields.io/badge/dogfooded-%E2%9C%93-43D9AD?style=flat-square" alt="dogfooded"></a>
   <a href="https://pi.dev"><img src="https://img.shields.io/badge/for-Pi%20coding%20agent-B692FF?style=flat-square" alt="for the Pi coding agent"></a>
 </p>
@@ -508,12 +508,13 @@ Saved flows become CLI shortcuts. All commands run in the Pi session:
 | `/tf list` | List all saved flows |
 | `/tf run <name> [args]` | Run a saved flow (e.g. `/tf run summarize-files dir=src`) |
 | `/tf show <name>` | Print a flow's definition |
+| `/tf compile <name> [lr\|td]` | **Render the flow as a Mermaid diagram + verification overlay** — 0 tokens, no LLM; paste into a README/issue/PR |
 | `/tf runs` | Browse recent run history (interactive TUI — **live auto-refreshes** while any run is active) |
 | `/tf resume <runId>` | Continue a paused/failed run — cached phases skip automatically |
 | `/tf init` | **Interactively map model roles** to your enabled models (writes `~/.pi/agent/settings.json`) |
 | `/tf:<name> [args]` | Shortcut — runs the flow in one tap |
 
-Tool actions (used by the model): `run` (inline `define` or saved `name`), `save`, `resume`, `list`, `agents`, `init`, `verify`, `cache-clear`.
+Tool actions (used by the model): `run` (inline `define` or saved `name`), `save`, `resume`, `list`, `agents`, `init`, `verify`, `compile`, `cache-clear`.
 
 ## Background (detached) execution
 
@@ -727,12 +728,12 @@ Copy one into `.pi/taskflows/<name>.json` (or `~/.pi/agent/taskflows/`) and it r
 
 <div align="center">
 
-**0 runtime dependencies** · **670 tests** · **9 phase types** · **shared context tree** · **cross-session resume** · **cross-run memoization** · **detached execution** · **~9k LOC runtime**
+**0 runtime dependencies** · **702 tests** · **9 phase types** · **shared context tree** · **cross-session resume** · **cross-run memoization** · **detached execution** · **`compile` Mermaid renderer** · **~9k LOC runtime**
 
 </div>
 
 - **Zero runtime dependencies.** No `dependencies` field — the runtime is built entirely on Node built-ins (`fs` / `path` / `os` / `child_process` / `crypto`). The file lock is `fs.openSync("wx")`, not a third-party library.
-- **670 tests across 33 test files** covering concurrency, atomic file locking (8-process race regressions), path-traversal hardening, cross-session resume, cross-run cache freshness (flow/thinking/tools key isolation, fingerprint invalidation, TTL/LRU eviction), gate verdicts, budget caps, retry/backoff, approval flows, loop termination, tournament judging, sub-flow composition, the shared context tree (blackboard reuse, supervision spawn, subflow validation/nesting), workspace isolation (temp/dedicated/worktree lifecycle, fail-open degrade, dynamic-flow rejection), dynamic sub-flow security hardening, detached execution (PID persistence, stale detection, crash→failed, resume after failure), live run-history refresh, callback isolation, the idle watchdog, model-role init config, parseModelFromLabel with parenthesized-model-name regression, and multi-fence `safeParse` recovery.
+- **702 tests across 34 test files** covering concurrency, atomic file locking (8-process race regressions), path-traversal hardening, cross-session resume, cross-run cache freshness (flow/thinking/tools key isolation, fingerprint invalidation, TTL/LRU eviction), gate verdicts, budget caps, retry/backoff, approval flows, loop termination, tournament judging, sub-flow composition, the shared context tree (blackboard reuse, supervision spawn, subflow validation/nesting), workspace isolation (temp/dedicated/worktree lifecycle, fail-open degrade, dynamic-flow rejection), dynamic sub-flow security hardening, detached execution (PID persistence, stale detection, crash→failed, resume after failure), live run-history refresh, callback isolation, the idle watchdog, model-role init config, parseModelFromLabel with parenthesized-model-name regression, and multi-fence `safeParse` recovery, plus the `compile` Mermaid renderer (id-collision disambiguation, markdown-injection hardening, and full verify-overlay category coverage).
 - **Hardened by design.** Path-traversal defense (lexical + `realpath` containment check), runId validation, HTML/error sanitization, atomic writes, stale-lock stealing via `rename`, and an idle watchdog that kills wedged subagents (SIGTERM → SIGKILL after 5 minutes of silence). Dynamic sub-flows additionally get breadth caps, `cwd` containment, budget clamping, nesting depth caps, and prototype-pollution defense.
 - **Dogfooded.** Every new feature has to survive the project's own `self-improve` taskflow before it ships.
 

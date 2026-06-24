@@ -558,7 +558,7 @@ Quick reference:
 - `action: "run"` — run an inline `define` (a one-off DAG) **or** a saved `name` (with optional `args`). Use `define` for an ad-hoc flow; use `name` to invoke something previously saved. Add `detach: true` to run in the background (returns immediately with the runId; poll the store for status).
 - `action: "save"` — persist `define` (scope `project` — default, committed/shared — or `user`); it becomes `/tf:<name>`. On a name collision, project overrides user.
 - `action: "resume"` — continue a paused/failed run by `runId`.
-- `action: "list"` — list saved flows. `action: "verify"` — static-check a `define` (zero tokens). `action: "agents"` — list available agents.
+- `action: "list"` — list saved flows. `action: "verify"` — static-check a `define` (zero tokens). `action: "compile"` — render a saved or inline flow as a Mermaid diagram + verification report (zero tokens, no LLM). `action: "agents"` — list available agents.
 
 ## Background (detached) runs
 
@@ -580,5 +580,5 @@ A run moves through: **running →** `completed` (a `final` phase produced outpu
 
 ## User commands
 
-- `/tf list` · `/tf run <name> [args]` · `/tf show <name>` · `/tf runs` · `/tf resume <runId>`
+- `/tf list` · `/tf run <name> [args]` · `/tf show <name>` · `/tf compile <name> [lr|td]` · `/tf runs` · `/tf resume <runId>`
 - `/tf:<name> [args]` — shortcut for each saved flow
