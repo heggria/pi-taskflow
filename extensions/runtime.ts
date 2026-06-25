@@ -20,8 +20,8 @@ import { type Budget, type CacheScope, dependenciesOf, finalPhase, LOOP_DEFAULT_
 import { verifyTaskflow } from "./verify.ts";
 import { hashInput, newRunId, type PhaseState, type RunState, runsDir } from "./store.ts";
 import { CacheStore, resolveFingerprint } from "./cache.ts";
-import { flowDefHash } from "./flowir/hash.ts";
-import { computeStaleFrontier, readMapOf } from "./stale.ts";
+import { compileTaskflowToIR } from "./flowir/index.ts";
+import { computeStaleFrontier, declaredReadMapOfDef, readMapOf } from "./stale.ts";
 import { ctxDirFor, drainPendingSpawns, initCtxDir, registerNode, setNodeStatus, type SpawnAssignment } from "./context-store.ts";
 import { allocateWorkspace, isWorkspaceKeyword, type Workspace } from "./workspace.ts";
 
@@ -923,7 +923,7 @@ async function executePhaseInner(
 			}
 			if (allPassed) {
 				// All evals passed — skip the LLM gate, return an auto-pass.
-				const inputHash = cacheKey(cc, [phase.id, "eval-skip"]);
+				const inputHash = cacheKeys(cc, [phase.id, "eval-skip"]).key;
 				const ps: PhaseState = {
 					id: phase.id,
 					status: "done",
@@ -943,8 +943,9 @@ async function executePhaseInner(
 		const refWarning = warnUnresolvedRefs(phase.id, interp.missing);
 		const fullTask = preRead + text;
 		const agentName = resolveAgent(phase.agent, deps, state);
-		const inputHash = cacheKey(cc, [phase.id, agentName, phase.model ?? "", fullTask]);
-		const cached = cachedPhase(cc, inputHash);
+		const ck = cacheKeys(cc, [phase.id, agentName, phase.model ?? "", fullTask]);
+		const inputHash = ck.key;
+		const cached = cachedPhase(cc, ck);
 		if (cached) return cached;
 
 		const r = await runOne(agentName, fullTask, liveSink(state, phase.id, emitProgress), nodeIdFor());
@@ -1003,7 +1004,7 @@ async function executePhaseInner(
 				const retryCtx = buildInterpolationContext(state, lastCompletedOutput(state, phase));
 				const retryText = interpolate(phase.task ?? "", retryCtx).text;
 				const retryTask = preRead + retryText;
-				const retryIH = cacheKey(cc, [phase.id, agentName, phase.model ?? "", retryTask]);
+				const retryIH = cacheKeys(cc, [phase.id, agentName, phase.model ?? "", retryTask]).key;
 				const retryR = await runOne(agentName, retryTask, liveSink(state, phase.id, emitProgress));
 				gatePs = resultToPhaseState(phase.id, retryR, retryIH, parseJson);
 				if (gatePs.status === "done") gatePs.gate = parseGateVerdict(retryR.output);
@@ -1025,8 +1026,9 @@ async function executePhaseInner(
 				task: preRead + r.text,
 			};
 		});
-		const inputHash = cacheKey(cc, [phase.id, phase.model ?? "", JSON.stringify(branches)]);
-		const cached = cachedPhase(cc, inputHash);
+		const ck = cacheKeys(cc, [phase.id, phase.model ?? "", JSON.stringify(branches)]);
+		const inputHash = ck.key;
+		const cached = cachedPhase(cc, ck);
 		if (cached) return cached;
 
 		const results = await runFanout(branches);
@@ -1066,8 +1068,9 @@ async function executePhaseInner(
 				task: preRead + interpolate(phase.task ?? "", localCtx).text,
 			};
 		});
-		const inputHash = cacheKey(cc, [phase.id, phase.model ?? "", JSON.stringify(tasks)]);
-		const cached = cachedPhase(cc, inputHash);
+		const ck = cacheKeys(cc, [phase.id, phase.model ?? "", JSON.stringify(tasks)]);
+		const inputHash = ck.key;
+		const cached = cachedPhase(cc, ck);
 		if (cached) return cached;
 
 		const results = await runFanout(tasks);
@@ -1087,8 +1090,9 @@ async function executePhaseInner(
 		const readRefs: string[] = [];
 		const ctx = buildInterpolationContext(state, previousOutput, undefined, (ref) => readRefs.push(ref));
 		const message = interpolate(phase.task ?? "Approve to continue?", ctx).text;
-		const inputHash = cacheKey(cc, [phase.id, phase.model ?? "", "approval", message]);
-		const cached = cachedPhase(cc, inputHash);
+		const ck = cacheKeys(cc, [phase.id, phase.model ?? "", "approval", message]);
+		const inputHash = ck.key;
+		const cached = cachedPhase(cc, ck);
 		if (cached) return cached;
 
 		// Non-interactive (headless/CI/detached): auto-REJECT, fail-open, but record it.
@@ -1232,8 +1236,9 @@ async function executePhaseInner(
 		// that a different generated plan yields a different key (and an identical plan
 		// hits cache). For saved flows the name is the identity (historical behavior).
 		const flowIdentity = hasDef ? `def:${JSON.stringify(subDef)}` : `flow:${name}`;
-		const inputHash = cacheKey(cc, [phase.id, flowIdentity, preRead, JSON.stringify(subArgs)]);
-		const cached = cachedPhase(cc, inputHash);
+		const ck = cacheKeys(cc, [phase.id, flowIdentity, preRead, JSON.stringify(subArgs)]);
+		const inputHash = ck.key;
+		const cached = cachedPhase(cc, ck);
 		if (cached) return cached;
 
 		const live = state.phases[phase.id];
@@ -1607,7 +1612,7 @@ function lastCompletedOutput(state: RunState, phase: Phase): string | undefined 
  * scope, optional TTL, and a pre-resolved fingerprint string so each phase-type
  * branch can fold it into its inputHash and consult the cross-run store uniformly.
  */
-interface PhaseCacheCtx {
+export interface PhaseCacheCtx {
 	scope: CacheScope;
 	ttlMs?: number;
 	fingerprint: string;
@@ -1638,20 +1643,50 @@ interface PhaseCacheCtx {
 }
 
 /** Fold the phase fingerprint into the base hash parts to form the final cache key. */
-function cacheKey(cc: PhaseCacheCtx, baseParts: string[]): string {
+/** A computed cache identity: the new (versioned) key plus the read-only
+ *  fallback keys used to honor entries written by older releases. The `key`
+ *  is what we WRITE under and what `PhaseState.inputHash` carries; the
+ *  `legacyKey`/`bareKey` are consulted READ-ONLY on a miss so an upgrade
+ *  never produces a miss-storm. See docs/internal/cache-migration.md. */
+export interface CacheKeys {
+	/** Current key: folds `v2:flowdef:<hash>` (the overstory content fingerprint). */
+	key: string;
+	/** Pre-flowDefHash-era key: the flowdef line OMITTED entirely. Read-only. */
+	legacyKey: string;
+	/** Bare (unversioned) `flowdef:` key — written by pre-H1 code that folded
+	 *  the hash without a `v2:` prefix. Read-only. Removed in v0.1.0. */
+	bareKey: string;
+}
+
+/** Fold the phase fingerprint into the base hash parts to form the cache keys.
+ *
+ *  Three keys are produced for backward compatibility (see
+ *  docs/internal/cache-migration.md):
+ *    - `key`      : `v2:flowdef:<hash>` — the current write key.
+ *    - `legacyKey`: the flowdef line omitted — pre-flowDefHash entries.
+ *    - `bareKey`  : bare `flowdef:<hash>` (unversioned) — pre-H1 entries that
+ *      folded the hash without the `v2:` prefix.
+ *  `cachedPhase` consults all three READ-ONLY on a miss; `recordCache` writes
+ *  only `key`. This means an upgrade never produces a miss-storm: existing
+ *  entries (whichever shape) still hit, and new writes converge on `key`. */
+export function cacheKeys(cc: PhaseCacheCtx, baseParts: string[]): CacheKeys {
 	// Fold the full cache identity into the hash: flow name (prevents collisions
 	// across different flows that share a phase.id + task + model), the per-phase
 	// thinking/tools config (changing either changes the subagent's output), the
 	// resolved context pre-read content, and the world-state fingerprint.
-	const parts = [
-		`flow:${cc.flowName}`,
-		`flowdef:${cc.flowDefHash ?? ""}`,
+	const tail = [
 		...baseParts,
 		`think:${cc.thinking ?? ""}`,
 		`tools:${JSON.stringify(cc.tools ?? [])}`,
 		`ctx:${cc.preRead ?? ""}`,
 	];
-	return cc.fingerprint ? hashInput(...parts, cc.fingerprint) : hashInput(...parts);
+	const fold = (parts: string[]): string =>
+		cc.fingerprint ? hashInput(...parts, cc.fingerprint) : hashInput(...parts);
+	return {
+		key: fold([`flow:${cc.flowName}`, `v2:flowdef:${cc.flowDefHash ?? ""}`, ...tail]),
+		legacyKey: fold([`flow:${cc.flowName}`, ...tail]),
+		bareKey: fold([`flow:${cc.flowName}`, `flowdef:${cc.flowDefHash ?? ""}`, ...tail]),
+	};
 }
 
 /**
@@ -1660,31 +1695,39 @@ function cacheKey(cc: PhaseCacheCtx, baseParts: string[]): string {
  *   - "run-only": within-run resume only (historical behavior).
  *   - "cross-run": within-run first, then the persistent cross-run store.
  * On a cross-run hit, usage is zeroed and `cacheHit` records the source.
+ *
+ * The cross-run read is THREE-TIER and READ-ONLY for fallback keys: it tries
+ * `keys.key` (current `v2:flowdef:` shape) first, then `keys.bareKey` (pre-H1
+ * bare `flowdef:`), then `keys.legacyKey` (pre-flowDefHash, no flowdef line).
+ * A hit on ANY tier is restored as a cache hit; we do NOT write-through (no
+ * re-store under the new key) so the cache size stays stable and the legacy
+ * entry ages out naturally. See docs/internal/cache-migration.md.
  */
-function cachedPhase(cc: PhaseCacheCtx, inputHash: string): PhaseState | null {
+function cachedPhase(cc: PhaseCacheCtx, keys: CacheKeys): PhaseState | null {
 	if (cc.scope === "off") return null;
 	if (cc.forceRerun) return null;
 
 	// 1. within-run resume (fastest; always allowed unless scope is off)
-	if (cc.prior && cc.prior.status === "done" && cc.prior.inputHash === inputHash) {
+	if (cc.prior && cc.prior.status === "done" && cc.prior.inputHash === keys.key) {
 		return { ...cc.prior, status: "done" };
 	}
 
-	// 2. cross-run memoization (opt-in)
+	// 2. cross-run memoization (opt-in) — three-tier read-only fallback.
 	if (cc.scope === "cross-run") {
-		const e = cc.store.get(inputHash, cc.ttlMs);
-		if (e) {
+		for (const k of [keys.key, keys.bareKey, keys.legacyKey]) {
+			const e = cc.store.get(k, cc.ttlMs);
+			if (!e) continue;
 			// If we stored the full PhaseState, restore it (preserving gate,
 			// approval, reads, loop/tournament metadata, warnings) and just mark
 			// the cache hit + zero usage. Fallback to the legacy trimmed surface
 			// for entries written before this change.
 			if (e.state) {
-				return { ...e.state, inputHash, usage: emptyUsage(), cacheHit: "cross-run", endedAt: Date.now() };
+				return { ...e.state, inputHash: keys.key, usage: emptyUsage(), cacheHit: "cross-run", endedAt: Date.now() };
 			}
 			return {
 				id: cc.phaseId,
 				status: "done",
-				inputHash,
+				inputHash: keys.key,
 				output: e.output,
 				json: e.json,
 				model: e.model,
@@ -1893,7 +1936,12 @@ export async function recomputeTaskflow(
 	// replay; only the caller decides whether to persist the new state.
 	const newState = structuredClone(state) as RunState;
 	const reads = readMapOf(newState.phases);
-	const frontier = computeStaleFrontier(reads, seeds);
+	// M2: derive the declared read-map fresh from the def so the frontier uses
+	// the UNION (observed ∪ declared). Derived here (not read from the persisted
+	// `RunState.declaredDeps`) so old runs — pre-H1, no persisted declaredDeps —
+	// also get union semantics. The persisted field is audit/provenance only.
+	const declared = declaredReadMapOfDef(newState.def);
+	const frontier = computeStaleFrontier(reads, seeds, declared);
 	const allIds = Object.keys(newState.phases);
 
 	if (opts.dryRun) {
@@ -1927,20 +1975,26 @@ export async function recomputeTaskflow(
 
 	// Real recompute: topological order over the frontier so a downstream always
 	// sees its (already-refreshed) upstreams when it re-evaluates its cache key.
-	// The order must respect both declared dependsOn AND observed reads, because
-	// pi-taskflow allows interpolation refs without an explicit dependsOn edge.
+	// The order must respect declared dependsOn, observed reads, AND declared
+	// reads (M2 union): pi-taskflow allows interpolation refs without an
+	// explicit dependsOn edge, and a declared-but-unobserved edge (e.g. a `when`
+	// ref that never fired) must still order the reader after its upstream so
+	// the reader evaluates its cache key against the refreshed upstream (no
+	// false early-cutoff).
 	const seedSet = new Set(seeds);
-	function observedDeps(phaseId: string): string[] {
+	function depsFor(phaseId: string): string[] {
 		// A phase reading its own prior output (e.g. a loop `until` checking
 		// `{steps.thisId.output}`) must not create a self-edge in the scheduling
 		// graph — otherwise topoLayers would deadlock on the self-loop.
-		return (newState.phases[phaseId]?.reads ?? [])
+		const observed = (newState.phases[phaseId]?.reads ?? [])
 			.map((r) => r.stepId)
 			.filter((id) => id !== phaseId);
+		const declared_ = (declared.get(phaseId) ?? []).filter((id) => id !== phaseId);
+		return [...new Set([...observed, ...declared_])];
 	}
 	const augmentedPhases = newState.def.phases.map((p) => ({
 		...p,
-		dependsOn: [...new Set([...(p.dependsOn ?? []), ...observedDeps(p.id)])],
+		dependsOn: [...new Set([...(p.dependsOn ?? []), ...depsFor(p.id)])],
 	}));
 	const order = topoLayers(augmentedPhases)
 		.flat()
@@ -2016,9 +2070,23 @@ async function runTaskflowLayers(state: RunState, deps: RuntimeDeps): Promise<Ru
 	// Reused by every phase, persisted on the RunState for audit/resume.
 	// Never throws into the run — a hash failure leaves the field unset and the
 	// cache key degrades to the legacy flowName-only shape.
+	//
+	// Routed through the FlowIR compile seam (M1): `compileTaskflowToIR`
+	// produces the content-addressed IR whose `hash` (== flowDefHash in the
+	// stub) folds into the cache key, and whose `meta.declaredDeps` (M2 declared
+	// plane) is persisted for audit/provenance. The declared plane is also
+	// derived fresh from `def` in recompute (so old runs get union semantics
+	// too); the persisted copy is for display.
 	if (state.flowDefHash === undefined) {
 		try {
-			state.flowDefHash = await flowDefHash(def);
+			const ir = await compileTaskflowToIR(def);
+			state.flowDefHash = ir.hash ?? "failed";
+			state.declaredDeps = ir.meta.declaredDeps;
+			if (ir.errors.length) {
+				console.warn(
+					`[taskflow] IR compile errors for '${def.name}': ${ir.errors.map((e) => e.message).join("; ")}`,
+				);
+			}
 		} catch (e) {
 			// Fail-safe: warn loudly rather than silently degrading to the legacy
 			// flowName-only key, which would reopen the cross-flow collision hole.

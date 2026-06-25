@@ -45,7 +45,8 @@ import {
 } from "./store.ts";
 import { CacheStore } from "./cache.ts";
 import { safeParse } from "./interpolate.ts";
-import { formatWhyStale, readMapOf } from "./stale.ts";
+import { declaredReadMapOfDef, formatWhyStale, readMapOf } from "./stale.ts";
+import type { TaskflowIR } from "./flowir/index.ts";
 import {
 	isValidKey,
 	queueSpawn,
@@ -86,8 +87,8 @@ const ShorthandStep = Type.Object(
 );
 
 const TaskflowParams = Type.Object({
-	action: StringEnum(["run", "save", "resume", "list", "agents", "init", "verify", "compile", "provenance", "why-stale", "recompute", "cache-clear"] as const, {
-		description: "What to do: run a flow, save a definition, resume a paused run, list saved flows, list available agents, init model role configuration, verify the DAG, compile the DAG to a Mermaid diagram + verification report, show observed readSet provenance, explain why a run is stale, minimally recompute a stale run, or clear the cross-run memoization cache",
+	action: StringEnum(["run", "save", "resume", "list", "agents", "init", "verify", "compile", "ir", "provenance", "why-stale", "recompute", "cache-clear"] as const, {
+		description: "What to do: run a flow, save a definition, resume a paused run, list saved flows, list available agents, init model role configuration, verify the DAG, compile the DAG to a Mermaid diagram + verification report, compile to FlowIR + content hash, show observed readSet provenance, explain why a run is stale, minimally recompute a stale run, or clear the cross-run memoization cache",
 		default: "run",
 	}),
 	name: Type.Optional(Type.String({ description: "Name of a saved flow (for run/save without inline define)" })),
@@ -150,6 +151,43 @@ const TaskflowParams = Type.Object({
 		}),
 	),
 });
+
+function formatFlowIR(ir: TaskflowIR): string {
+	const lines: string[] = [];
+	lines.push(`# FlowIR — "${ir.meta.sourceFlowName}"`);
+	lines.push("");
+	if (ir.hash) {
+		lines.push(`**content hash:** \`${ir.hash}\`${ir.usedFallbackHash ? "  (fallback — stub projection)" : "  (overstory-canonical)"}`);
+		lines.push("");
+	} else {
+		lines.push("**content hash:** _(unavailable — computation failed)_");
+		lines.push("");
+	}
+	if (ir.errors.length) {
+		lines.push(`## Errors (${ir.errors.length})`);
+		for (const e of ir.errors) lines.push(`- [${e.code}]${e.phaseId ? ` [${e.phaseId}]` : ""}: ${e.message}`);
+		lines.push("");
+	}
+	if (ir.warnings.length) {
+		lines.push(`## Warnings (${ir.warnings.length})`);
+		for (const w of ir.warnings) lines.push(`- ${w.phaseId ? `[${w.phaseId}] ` : ""}${w.message}`);
+		lines.push("");
+	}
+	lines.push("## Nodes (1:1 projection)");
+	lines.push("");
+	for (const n of ir.ir?.nodes ?? []) {
+		lines.push(`- **${n.id}** (kind: \`${n.kind}\`)  inject:[${n.inject.join(", ") || ""}]  emits:[${n.emits.join(", ")}]${n.when ? `  when: \`${n.when}\`` : ""}`);
+	}
+	lines.push("");
+	lines.push("## Declared dependencies (M2)");
+	lines.push("");
+	lines.push("| phase | reads | writes |");
+	lines.push("|-------|-------|--------|");
+	for (const [id, deps] of Object.entries(ir.meta.declaredDeps)) {
+		lines.push(`| ${id} | ${deps.reads.join(", ") || "—"} | ${deps.writes.join(", ")} |`);
+	}
+	return lines.join("\n");
+}
 
 function formatProvenance(run: RunState): string {
 	const lines: string[] = [];
@@ -666,6 +704,46 @@ export default function (pi: ExtensionAPI) {
 				};
 			}
 
+			if (action === "ir") {
+				const { compileTaskflowToIR } = await import("./flowir/index.ts");
+				// Resolve definition: inline define (object or JSON/fenced string), shorthand,
+				// or saved name. Mirrors action=compile / action=verify.
+				let def: Taskflow | undefined;
+				let resolvedDefine: unknown = params.define;
+				if (typeof resolvedDefine === "string") {
+					const parsed = safeParse(resolvedDefine);
+					if (parsed && typeof parsed === "object") resolvedDefine = parsed;
+				}
+				if (resolvedDefine) {
+					const d = resolvedDefine as Record<string, unknown>;
+					if (typeof d === "object" && d !== null && Array.isArray(d.phases)) {
+						def = d as unknown as Taskflow;
+					} else if (isShorthand(resolvedDefine)) {
+						try {
+							def = desugar(resolvedDefine) as Taskflow;
+						} catch (e) {
+							return errorResult(action, `Invalid shorthand: ${e instanceof Error ? e.message : String(e)}`);
+						}
+					}
+				} else if (params.name) {
+					const saved = getFlow(ctx.cwd, params.name);
+					if (saved) def = saved.def;
+				}
+				if (!def) {
+					return errorResult(action, "Provide 'define' (DSL) or 'name' (saved flow) to compile to IR.");
+				}
+				// Schema validation first so a malformed graph gives a clean error.
+				const vr = validateTaskflow(def, { cwd: ctx.cwd ? String(ctx.cwd) : undefined });
+				if (!vr.ok) {
+					return errorResult(action, `Schema validation failed:\n${vr.errors.join("\n")}`);
+				}
+				const ir = await compileTaskflowToIR(def) as TaskflowIR;
+				return {
+					content: [{ type: "text", text: formatFlowIR(ir) }],
+					details: { action } satisfies TaskflowDetails,
+				};
+			}
+
 			if (action === "cache-clear") {
 				const removed = new CacheStore(ctx.cwd).clear();
 				return {
@@ -701,9 +779,10 @@ export default function (pi: ExtensionAPI) {
 				const run = loadRun(ctx.cwd, params.runId);
 				if (!run) return errorResult(action, `Run not found: ${params.runId}`);
 				const reads = readMapOf(run.phases);
+				const declared = declaredReadMapOfDef(run.def);
 				const seeds = params.phaseId ? [String(params.phaseId)] : [];
 				return {
-					content: [{ type: "text", text: formatWhyStale(run.runId, run.flowName, reads, seeds) }],
+					content: [{ type: "text", text: formatWhyStale(run.runId, run.flowName, reads, seeds, declared) }],
 					details: { action } satisfies TaskflowDetails,
 				};
 			}
@@ -931,7 +1010,7 @@ export default function (pi: ExtensionAPI) {
 	pi.registerCommand("tf", {
 		description: "Taskflow: list | run <name> | show <name> | compile <name> | runs | init",
 		getArgumentCompletions: (prefix) => {
-			const subs = ["list", "run", "show", "runs", "resume", "init", "save", "verify", "compile", "provenance", "why-stale", "recompute"];
+			const subs = ["list", "run", "show", "runs", "resume", "init", "save", "verify", "compile", "ir", "provenance", "why-stale", "recompute"];
 			const items = subs.map((s) => ({ value: s, label: s }));
 			const filtered = items.filter((i) => i.value.startsWith(prefix));
 			return filtered.length > 0 ? filtered : null;
@@ -987,6 +1066,30 @@ export default function (pi: ExtensionAPI) {
 				return;
 			}
 
+			if (sub === "ir") {
+				if (!arg) {
+					ctx.ui.notify("Usage: /tf ir <name>", "warning");
+					return;
+				}
+				const flowName = arg.trim().split(/\s+/)[0];
+				const flow = getFlow(ctx.cwd, flowName);
+				if (!flow) {
+					ctx.ui.notify(`Flow not found: ${flowName}`, "error");
+					return;
+				}
+				// Schema-validate before compiling so a malformed saved flow yields a
+				// clean error rather than a half-rendered report (mirrors action=ir).
+				const vr = validateTaskflow(flow.def, { cwd: ctx.cwd ? String(ctx.cwd) : undefined });
+				if (!vr.ok) {
+					ctx.ui.notify(`Schema validation failed:\n${vr.errors.join("\n")}`, "error");
+					return;
+				}
+				const { compileTaskflowToIR } = await import("./flowir/index.ts");
+				const ir = await compileTaskflowToIR(flow.def);
+				ctx.ui.notify(formatFlowIR(ir), "info");
+				return;
+			}
+
 			if (sub === "provenance") {
 				if (!arg) {
 					ctx.ui.notify("Usage: /tf provenance <runId>", "warning");
@@ -1013,7 +1116,8 @@ export default function (pi: ExtensionAPI) {
 					return;
 				}
 				const reads = readMapOf(run.phases);
-				ctx.ui.notify(formatWhyStale(run.runId, run.flowName, reads, rest), "info");
+				const declared = declaredReadMapOfDef(run.def);
+				ctx.ui.notify(formatWhyStale(run.runId, run.flowName, reads, rest, declared), "info");
 				return;
 			}
 

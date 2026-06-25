@@ -21,6 +21,7 @@ import * as path from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import type { Taskflow } from "./schema.ts";
 import type { UsageStats } from "./usage.ts";
+import type { DeclaredDeps } from "./flowir/meta.ts";
 
 export interface SavedFlow {
 	name: string;
@@ -103,6 +104,16 @@ export interface RunState {
 	 *  re-run always reuses them. Filled once at run start; persisted for
 	 *  audit/resume consistency. */
 	flowDefHash?: string | "failed";
+	/** Per-phase *declared* dependency footprint (M2), synthesized at compile
+	 *  time from `{steps.X}` interpolation refs via `compileTaskflowToIR`.
+	 *  This is the *declared* plane — distinct from the *observed* readSet
+	 *  (`PhaseState.reads`, captured at runtime). Recompute staleness uses the
+	 *  **union** (observed ∪ declared) so a declared-but-unobserved edge (e.g.
+	 *  a `when` ref that never fired) still propagates. JSON-safe `Record`
+	 *  shape so it round-trips through persistence. Audit/provenance only —
+	 *  recompute derives this fresh from `def` so old runs (pre-H1) also get
+	 *  union semantics. */
+	declaredDeps?: Record<string, DeclaredDeps>;
 }
 
 // ---------------------------------------------------------------------------

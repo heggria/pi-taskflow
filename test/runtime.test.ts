@@ -266,7 +266,7 @@ test("runtime: resume skips cached completed phases", async () => {
 		status: "done",
 		output: "out:start",
 		// Must match runtime cacheKey(): flow name + flowDefHash + base parts + thinking + tools + ctx.
-		inputHash: hashInput(`flow:${def.name}`, `flowdef:${fh}`, "one", "a", "", "start", "think:", "tools:[]", "ctx:"),
+		inputHash: hashInput(`flow:${def.name}`, `v2:flowdef:${fh}`, "one", "a", "", "start", "think:", "tools:[]", "ctx:"),
 		usage: emptyUsage(),
 	};
 
@@ -290,13 +290,13 @@ test("runtime: resume caches a completed reduce phase (unified inputHash)", asyn
 	const { flowDefHash } = await import("../extensions/flowir/hash.ts");
 	const fh = await flowDefHash(def);
 	const state = mkState(def);
-	state.phases.x = { id: "x", status: "done", output: "o:tx", inputHash: hashInput(`flow:${def.name}`, `flowdef:${fh}`, "x", "a", "", "tx", "think:", "tools:[]", "ctx:"), usage: emptyUsage() };
+	state.phases.x = { id: "x", status: "done", output: "o:tx", inputHash: hashInput(`flow:${def.name}`, `v2:flowdef:${fh}`, "x", "a", "", "tx", "think:", "tools:[]", "ctx:"), usage: emptyUsage() };
 	// reduce cache key has the same shape as agent/gate (flow + flowDefHash + base parts + thinking + tools).
 	state.phases.sum = {
 		id: "sum",
 		status: "done",
 		output: "o:combine o:tx",
-		inputHash: hashInput(`flow:${def.name}`, `flowdef:${fh}`, "sum", "a", "", "combine o:tx", "think:", "tools:[]", "ctx:"),
+		inputHash: hashInput(`flow:${def.name}`, `v2:flowdef:${fh}`, "sum", "a", "", "combine o:tx", "think:", "tools:[]", "ctx:"),
 		usage: emptyUsage(),
 	};
 	const res = await executeTaskflow(state, baseDeps(runner));

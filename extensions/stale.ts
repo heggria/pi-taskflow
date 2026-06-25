@@ -23,6 +23,7 @@
  */
 
 import type { PhaseState } from "./store.ts";
+import { collectRefs, type Taskflow } from "./schema.ts";
 
 // ---------------------------------------------------------------------------
 // Read graph
@@ -41,13 +42,24 @@ export function readMapOf(phases: Record<string, PhaseState>): ReadMap {
 	return m;
 }
 
-/** Phases that directly read `phaseId` (its immediate dependents). */
-export function dependentsOf(reads: ReadMap, phaseId: string): string[] {
-	const out: string[] = [];
+/** Phases that directly read `phaseId` (its immediate dependents).
+ *
+ *  When `declared` is provided, the dependent set is the **union** of
+ *  observed dependents (from `reads`) and declared dependents (from
+ *  `declared`) — a declared-but-unobserved edge (e.g. a `when` ref that never
+ *  fired) still counts as a dependency for staleness propagation (M2 union).
+ *  `declared` undefined → observed-only (backward-compatible). */
+export function dependentsOf(reads: ReadMap, phaseId: string, declared?: ReadMap): string[] {
+	const out = new Set<string>();
 	for (const [reader, deps] of reads) {
-		if (deps.includes(phaseId)) out.push(reader);
+		if (deps.includes(phaseId)) out.add(reader);
 	}
-	return out;
+	if (declared) {
+		for (const [reader, deps] of declared) {
+			if (deps.includes(phaseId)) out.add(reader);
+		}
+	}
+	return [...out];
 }
 
 // ---------------------------------------------------------------------------
@@ -56,25 +68,51 @@ export function dependentsOf(reads: ReadMap, phaseId: string): string[] {
 
 /**
  * The set of phases that are stale if `seeds` change, transitively. A reader
- * is stale if ANY phase it observed-reading is stale (union/I5: when in doubt,
- * assume dependency). Includes the seeds themselves.
+ * is stale if ANY phase it (observed- OR declared-)reading is stale
+ * (union/I5: when in doubt, assume dependency). Includes the seeds themselves.
+ *
+ * When `declared` is provided, the read graph used for propagation is the
+ * **union** of `reads` (observed, M3) and `declared` (M2 compile-time refs):
+ * a declared-but-unobserved edge still propagates staleness. `declared`
+ * undefined → observed-only (backward-compatible, identical to pre-M2).
  *
  * Deterministic. O(phases + read-edges). Cycles in the read graph (which a
  * correct DAG can't produce, but a pathological one could) terminate because a
  * phase is enqueued at most once.
  */
-export function computeStaleFrontier(reads: ReadMap, seeds: Iterable<string>): Set<string> {
+export function computeStaleFrontier(reads: ReadMap, seeds: Iterable<string>, declared?: ReadMap): Set<string> {
 	const stale = new Set<string>();
 	const queue: string[] = [...seeds];
 	while (queue.length) {
 		const s = queue.shift() as string;
 		if (stale.has(s)) continue;
 		stale.add(s);
-		for (const dep of dependentsOf(reads, s)) {
+		for (const dep of dependentsOf(reads, s, declared)) {
 			if (!stale.has(dep)) queue.push(dep);
 		}
 	}
 	return stale;
+}
+
+// ---------------------------------------------------------------------------
+// Declared-plane derivation (M2)
+// ---------------------------------------------------------------------------
+
+/** Build a declared ReadMap from a flow definition: each phase's `collectRefs`
+ *  `{steps.X}` refs become its declared reads (self-refs excluded so a loop
+ *  `until` checking `{steps.thisId.output}` doesn't create a self-edge).
+ *
+ *  Pure. Used by `recomputeTaskflow` and `/tf why-stale` so union (observed ∪
+ *  declared) semantics apply to old runs too (pre-H1 runs have no persisted
+ *  `RunState.declaredDeps` — deriving from `def` keeps recompute sound). */
+export function declaredReadMapOfDef(def: Taskflow): ReadMap {
+	const m: ReadMap = new Map();
+	for (const p of def.phases) {
+		const refs = collectRefs(p);
+		const reads = refs.steps.filter((id) => id !== p.id);
+		if (reads.length) m.set(p.id, reads);
+	}
+	return m;
 }
 
 // ---------------------------------------------------------------------------
@@ -85,12 +123,18 @@ export function computeStaleFrontier(reads: ReadMap, seeds: Iterable<string>): S
  * Render either the full observed dependency graph (no seeds) or the stale
  * frontier given assumed-changed seeds. Each stale phase lists the stale
  * upstreams that caused it (its "why").
+ *
+ * When `declared` is provided, the frontier is the **union** (observed ∪
+ * declared) and a stale phase's "why" annotates edges present only in the
+ * declared plane (not observed at runtime) with `(declared)`. `declared`
+ * undefined → observed-only rendering (backward-compatible).
  */
 export function formatWhyStale(
 	runId: string,
 	flowName: string,
 	reads: ReadMap,
 	seeds: readonly string[],
+	declared?: ReadMap,
 ): string {
 	const lines: string[] = [];
 	lines.push(`why-stale — run ${runId} · flow "${flowName}"`);
@@ -98,26 +142,32 @@ export function formatWhyStale(
 
 	if (seeds.length === 0) {
 		// No seeds → show the full observed dependency graph (who reads what).
-		if (reads.size === 0) {
+		if (reads.size === 0 && (!declared || declared.size === 0)) {
 			lines.push("(No observed readSets in this run — provenance is empty.)");
 			return lines.join("\n");
 		}
 		lines.push("Observed dependency graph (who reads what):");
 		lines.push("");
-		for (const [reader, deps] of reads) {
-			lines.push(`■ ${reader}  reads: ${deps.join(", ")}`);
+		const allReaders = new Set<string>([...reads.keys(), ...(declared?.keys() ?? [])]);
+		for (const reader of allReaders) {
+			const obs = reads.get(reader) ?? [];
+			const dec = declared?.get(reader) ?? [];
+			const parts: string[] = [];
+			for (const d of obs) parts.push(d);
+			for (const d of dec) if (!obs.includes(d)) parts.push(`${d} (declared)`);
+			lines.push(`■ ${reader}  reads: ${parts.join(", ") || "(none)"}`);
 		}
 		lines.push("");
 		lines.push("Pass a phase id to compute its stale frontier: /tf why-stale <runId> <phaseId>");
 		return lines.join("\n");
 	}
 
-	const frontier = computeStaleFrontier(reads, seeds);
+	const frontier = computeStaleFrontier(reads, seeds, declared);
 	const seedSet = new Set(seeds);
 	lines.push(`Assuming changed: ${[...seedSet].join(", ")}`);
 	lines.push("");
 	if (frontier.size <= seedSet.size) {
-		lines.push(`Stale frontier: only the seed(s) themselves — nothing else observed-reading them.`);
+		lines.push(`Stale frontier: only the seed(s) themselves — nothing else reads them.`);
 		return lines.join("\n");
 	}
 	lines.push(`Stale frontier (transitive, ${frontier.size} phases):`);
@@ -127,10 +177,16 @@ export function formatWhyStale(
 		if (seedSet.has(id)) {
 			lines.push(`  ■ ${id}  (changed — seed)`);
 		} else {
-			// Why is it stale? The stale upstreams it read.
-			const deps = reads.get(id) ?? [];
-			const causes = deps.filter((d) => frontier.has(d));
-			lines.push(`  ■ ${id}  ← reads ${causes.length ? causes.join(", ") : "(nothing stale?)"}`);
+			// Why is it stale? The stale upstreams it read (observed ∪ declared).
+			const obs = reads.get(id) ?? [];
+			const dec = declared?.get(id) ?? [];
+			const obsCauses = obs.filter((d) => frontier.has(d));
+			const decCauses = dec.filter((d) => frontier.has(d) && !obs.includes(d));
+			const causeStr = [
+				...obsCauses,
+				...decCauses.map((d) => `${d} (declared)`),
+			].join(", ");
+			lines.push(`  ■ ${id}  ← reads ${causeStr || "(nothing stale?)"}`);
 		}
 	}
 	return lines.join("\n");

@@ -781,7 +781,7 @@ export function validateTaskflow(def: unknown, opts: ValidationOptions = {}): Va
 	return { ok: errors.length === 0, errors, warnings };
 }
 
-function collectRefs(phase: Phase): { steps: string[]; args: string[] } {
+export function collectRefs(phase: Phase): { steps: string[]; args: string[] } {
 	const steps = new Set<string>();
 	const args = new Set<string>();
 	const scan = (s: string | undefined) => {
