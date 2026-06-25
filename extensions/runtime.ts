@@ -169,6 +169,31 @@ function resultToPhaseState(id: string, r: RunResult, inputHash: string, parseJs
 	};
 }
 
+/**
+ * Synthesize a 0-token `RunResult` from a cached per-item `PhaseState` so a
+ * cross-run per-item cache hit flows through `mergePhaseState` as a normal
+ * successful fan-out item. `stopReason: "cache-hit"` is NOT in `isFailed`'s
+ * failure set (only "error"/"aborted"/non-zero exit), so the item counts as
+ * success. Usage is `emptyUsage()` — a cached item spent no new tokens this
+ * run, so `mergePhaseState`'s `aggregateUsage` charges nothing for it.
+ *
+ * Used only by the `map` per-item cache path (see `runFanout`). Fail-open by
+ * construction: this is only reached AFTER a successful `cachedPhase` lookup,
+ * so `ps.output` is always present.
+ */
+function phaseStateToRunResult(ps: PhaseState, it: { agent: string; task: string }): RunResult {
+	return {
+		agent: it.agent,
+		task: it.task,
+		exitCode: 0,
+		output: ps.output ?? "",
+		stderr: "",
+		usage: emptyUsage(),
+		model: ps.model,
+		stopReason: "cache-hit",
+	};
+}
+
 /** Convert observed read refs (e.g. "steps.scout.output") into a structured
  *  readSet keyed by upstream phase id, tagging each with the version
  *  (= inputHash) that was current when read. Only `steps.*` refs are upstream
@@ -326,12 +351,20 @@ function mergePhaseState(
 	const model = ran.find((r) => r.model !== undefined)?.model;
 	// Combine outputs as a labelled list; also expose a JSON array of outputs.
 	// For failed items, use the error message instead of the useless placeholder.
-	const combinedText = ran
+	// Labels are positionally aligned to the ORIGINAL `over` array: we iterate
+	// over ALL results (including budget-skipped, which are filtered to null) and
+	// use `results.length` as N, so item k's label reads `[k/N]` matching its
+	// position in `over` — not its rank among non-skipped items. Per-item cache
+	// hits (`stopReason: "cache-hit"`) are not budget-skipped, so they keep their
+	// original positional label.
+	const combinedText = results
 		.map((r, i) => {
-			const label = `### [${i + 1}/${ran.length}] ${r.agent}${isFailed(r) ? " (failed)" : ""}`;
+			if (r.stopReason === "budget-skipped") return null;
+			const label = `### [${i + 1}/${results.length}] ${r.agent}${isFailed(r) ? " (failed)" : ""}`;
 			const content = isFailed(r) ? (r.errorMessage || r.stderr || r.output) : r.output;
 			return `${label}\n\n${content}`;
 		})
+		.filter((x): x is string => x !== null)
 		.join("\n\n---\n\n");
 	// Only successful runs feed the parsed JSON array (no error/skip strings).
 	const jsonArray = parseJson ? ran.filter((r) => !isFailed(r)).map((r) => safeParse(r.output) ?? r.output) : undefined;
@@ -870,7 +903,14 @@ async function executePhaseInner(
 	const parseJson = phase.output === "json";
 
 	// Runs a list of sub-tasks with live fan-out progress + aggregate live usage/activity.
-	const runFanout = async (items: Array<{ agent: string; task: string }>): Promise<RunResult[]> => {
+	// `perItem` (map only) enables per-item cross-run caching: each item is looked
+	// up in the cache before spawning a subagent, and a successful fresh item is
+	// recorded so a later run with that item unchanged hits per-item. When
+	// `perItem` is undefined (parallel, or non-cacheable maps) the path is inert.
+	const runFanout = async (
+		items: Array<{ agent: string; task: string }>,
+		perItem?: { keyOf: (idx: number) => CacheKeys | null },
+	): Promise<RunResult[]> => {
 		let done = 0;
 		let running = 0;
 		let failed = 0;
@@ -904,6 +944,28 @@ async function executePhaseInner(
 					stopReason: "budget-skipped",
 				} satisfies RunResult;
 			}
+			// Per-item cross-run cache lookup (map only). A hit synthesizes a 0-token
+			// RunResult and returns immediately — the item never spawns a subagent and
+			// never reaches the ctx_spawn drain below (a cached item can't have queued
+			// new spawns). Fail-open: any error in the lookup path degrades to executing.
+			if (perItem) {
+				try {
+					const ckItem = perItem.keyOf(idx);
+					if (ckItem) {
+						const hit = cachedPhase(cc, ckItem);
+						if (hit) {
+							done++;
+							const synth = phaseStateToRunResult(hit, it);
+							liveUsages[idx] = emptyUsage();
+							if (hit.model) latestModel = hit.model;
+							refresh();
+							return synth;
+						}
+					}
+				} catch {
+					/* fail-open: a cache read error must never sink the item */
+				}
+			}
 			running++;
 			refresh();
 			if (ctxDir) {
@@ -919,6 +981,23 @@ async function executePhaseInner(
 			done++;
 			if (isFailed(r)) failed++;
 			liveUsages[idx] = r.usage;
+			// Per-item cross-run cache record (map only): persist a successful fresh
+			// item so a later run with this item unchanged hits per-item instead of
+			// re-running. Failed and budget-skipped items are never cached (a stale
+			// failure would be served on the next run). Fail-open: a write error never
+			// sinks the item — the fresh `r` is already in hand and flows downstream.
+			if (perItem && !isFailed(r) && r.stopReason !== "budget-skipped") {
+				try {
+					const ckItem = perItem.keyOf(idx);
+					if (ckItem) {
+						const ccItem: PhaseCacheCtx = { ...cc, phaseId: `${phase.id}#item${idx}` };
+						const itemPs = resultToPhaseState(`${phase.id}#item${idx}`, r, ckItem.key, parseJson);
+						recordCache(ccItem, itemPs);
+					}
+				} catch {
+					/* fail-open: cache write must never sink the item */
+				}
+			}
 			if (ctxDir) {
 				try {
 					const itemNid = nodeIdFor(String(idx));
@@ -1118,12 +1197,42 @@ async function executePhaseInner(
 				task: preRead + interpolate(phase.task ?? "", localCtx).text,
 			};
 		});
+		// Per-item caching is sound ONLY when ALL of:
+		//  - cross-run scope: run-only has no persistent store, so per-item entries
+		//    could never be re-read (no point keying them).
+		//  - no Shared Context Tree (`!sharing`): a sharing map item can read sibling
+		//    blackboard writes OUTSIDE its declared deps, so the per-item key (which
+		//    folds only the item's own task) under-approximates real reads and could
+		//    serve a stale result. Fall back to whole-map.
+		//  - not inside a runtime-generated sub-flow (`def:` frame in the stack):
+		//    such flows are untrusted / possibly non-deterministic, so per-item reuse
+		//    is unsafe. Fall back to whole-map (which still applies breadth caps).
+		// `undefined phaseFingerprint` is NOT a blocker: `cacheKeys` falls back to
+		// the whole-flow `flowDefHash`, which is stable across runs for a fixed def,
+		// so per-item keys for unchanged items remain stable.
+		const perItemCacheable =
+			cc.scope === "cross-run" &&
+			!sharing &&
+			!(deps._stack ?? []).some((s) => s.startsWith("def:"));
+		// Pre-compute per-item CacheKeys once so the lookup and the record path use
+		// the IDENTICAL key (and share cacheKeys' v3:phasefp + flow-name +
+		// fingerprint + thinking/tools/preRead contract). The per-item key folds
+		// `it.agent` (Arbiter fix): a different agent means different output, so a
+		// per-item key WITHOUT the agent could serve a stale cross-agent hit when
+		// only `phase.agent` changed (the whole-map key would correctly miss via
+		// JSON.stringify(tasks), but per-item keys would not).
+		const perItemKeys: (CacheKeys | null)[] = perItemCacheable
+			? tasks.map((it) => cacheKeys(cc, [phase.id, it.agent, phase.model ?? "", it.task]))
+			: tasks.map(() => null);
+		const perItem = perItemCacheable
+			? { keyOf: (idx: number): CacheKeys | null => perItemKeys[idx] ?? null }
+			: undefined;
 		const ck = cacheKeys(cc, [phase.id, phase.model ?? "", JSON.stringify(tasks)]);
 		const inputHash = ck.key;
 		const cached = cachedPhase(cc, ck);
 		if (cached) return cached;
 
-		const results = await runFanout(tasks);
+		const results = await runFanout(tasks, perItem);
 		const ps = mergePhaseState(phase.id, results, inputHash, parseJson);
 		if (readRefs.length) ps.reads = readRefsToReads(readRefs, state);
 		if (mapTruncated) {
