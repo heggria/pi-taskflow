@@ -553,6 +553,54 @@ Quick reference:
 - **Precedence (model/thinking/tools):** phase value → agent frontmatter (resolved via `modelRoles`) → global/default.
 - **Concurrency:** same-layer phases use `flow.concurrency`; a `map`/`parallel` phase uses `phase.concurrency ?? flow.concurrency ?? 8`.
 
+### Per-item map caching (cross-run)
+
+A `map` phase with `cache: { "scope": "cross-run" }` is cached **per item**, not
+just as a whole. When one of N items changes between runs, only that item
+re-executes — the other N−1 are served from the cross-run cache for $0.
+
+```jsonc
+{ "id": "audit-each", "type": "map",
+  "over": "{steps.discover.json.files}",   // array from an upstream phase
+  "task": "audit {item}",
+  "cache": { "scope": "cross-run" },        // ← enables per-item reuse
+  "dependsOn": ["discover"], "final": true }
+```
+
+How it works:
+
+- The **whole-map** entry is still checked first (fast path): an identical
+  re-run is a single $0 hit and never enters the fan-out.
+- On a whole-map miss, each item is looked up individually before it spawns a
+  subagent; a hit returns a 0-token synthesized result. Successful fresh items
+  are recorded so a later run with that item unchanged reuses them.
+- Per-item keys fold the item's resolved task **and agent** (so changing
+  `phase.agent` invalidates every item), plus the phase sub-fingerprint,
+  `thinking`/`tools`, and any `fingerprint` entries — exactly like a standalone
+  cross-run phase.
+
+Automatic fallbacks (per-item disables and the whole-map path is used):
+
+- `shareContext: true` on the phase, or flow-wide `contextSharing: true` — a
+  sharing item can read sibling blackboard writes outside its declared deps, so
+  the per-item key would under-approximate real reads.
+- The map runs **inside a runtime-generated sub-flow** (a `flow { def }` phase
+  or a `ctx_spawn({subflow})`) — untrusted / possibly non-deterministic.
+- `scope: "run-only"` (default) or `"off"` — no persistent store to reuse from.
+
+Notes & limitations:
+
+- Duplicate items (identical task + agent) share a single entry — reuse is
+  content-addressable, not positional.
+- Failed items and **budget-skipped** items are never cached, so they always
+  re-execute on the next run.
+- `{steps.<map>.json[k]}` indexes the k-th **successful** item (not the k-th
+  position in `over`); the merged `output` text, however, IS positionally
+  aligned with `over` (labels read `[k/N]`).
+- Within-run resume of a partially-completed map is not supported (only
+  fully-completed maps resume within a run); cross-run per-item reuse covers the
+  common case.
+
 ## Actions
 
 - `action: "run"` — run an inline `define` (a one-off DAG) **or** a saved `name` (with optional `args`). Use `define` for an ad-hoc flow; use `name` to invoke something previously saved. Add `detach: true` to run in the background (returns immediately with the runId; poll the store for status).
