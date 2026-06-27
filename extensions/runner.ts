@@ -12,6 +12,13 @@ import type { Message } from "@earendil-works/pi-ai";
 import { withFileMutationQueue } from "@earendil-works/pi-coding-agent";
 import type { AgentConfig } from "./agents.ts";
 import { emptyUsage, type UsageStats } from "./usage.ts";
+import type { LiveUpdate, RunOptions, RunResult, SubagentRunner } from "./host/runner-types.ts";
+
+// Re-export the host-neutral execution contract so every existing
+// `import { RunResult, RunOptions, LiveUpdate } from "./runner.ts"` keeps
+// working. The canonical definitions now live in ./host/runner-types.ts (the
+// seam that lets pi-taskflow run on pi, Codex, …).
+export type { LiveUpdate, RunOptions, RunResult, SubagentRunner } from "./host/runner-types.ts";
 
 const activeChildren = new Set<number>();
 const killAll = () => {
@@ -22,53 +29,10 @@ const killAll = () => {
 process.on("exit", killAll);
 process.on("SIGTERM", () => { killAll(); process.exit(143); });
 
-export interface RunResult {
-	agent: string;
-	task: string;
-	exitCode: number;
-	output: string;
-	stderr: string;
-	usage: UsageStats;
-	model?: string;
-	stopReason?: string;
-	errorMessage?: string;
-	/** Total subagent attempts incl. retries (set by the runtime's retry wrapper). */
-	attempts?: number;
-	/** Set when the subagent was killed by the idle watchdog (not a user abort). */
-	idleTimeout?: boolean;
-}
-
-export interface LiveUpdate {
-	/** Latest assistant text or tool activity (single-line, truncated upstream). */
-	text: string;
-	usage: UsageStats;
-	model?: string;
-}
-
-export interface RunOptions {
-	model?: string;
-	thinking?: string;
-	tools?: string[];
-	cwd?: string;
-	signal?: AbortSignal;
-	/** Fires on each assistant turn with the latest activity + accumulated usage. */
-	onLive?: (live: LiveUpdate) => void;
-	/**
-	 * Idle watchdog: if the subagent produces no stdout for this many ms, it is
-	 * considered stalled (hung stream / provider stall / tool deadlock) and is
-	 * killed (SIGTERM → SIGKILL). Resets on every stdout chunk. 0/undefined keeps
-	 * the prior behaviour (no idle timeout). Defaults to DEFAULT_IDLE_TIMEOUT_MS.
-	 */
-	idleTimeoutMs?: number;
-	/**
-	 * Shared Context Tree (opt-in). When set, the spawned subagent receives
-	 * PI_TASKFLOW_CTX_DIR + PI_TASKFLOW_NODE_ID in its environment and is loaded
-	 * with this extension via `--extension`, so it can register the ctx_* tools
-	 * (read/write/report/spawn) that read & write the per-run blackboard.
-	 */
-	ctxDir?: string;
-	nodeId?: string;
-}
+// `RunResult`, `LiveUpdate`, and `RunOptions` are defined in the host-neutral
+// contract (./host/runner-types.ts) and re-exported above. Their JSDoc and the
+// pi-specific notes (PI_TASKFLOW_CTX_DIR / --extension for ctx_* tools) live
+// with the pi implementation below.
 
 /**
  * Default idle-watchdog window. A subagent that emits nothing on stdout for this
@@ -603,6 +567,16 @@ export async function runAgentTask(
 		}
 	}
 }
+
+/**
+ * The pi host's `SubagentRunner` implementation: spawns an isolated
+ * `pi --mode json -p` process per task via `runAgentTask`. This is the object
+ * the engine receives when running under pi; a Codex host ships its own
+ * `codexSubagentRunner` against the same `SubagentRunner` contract.
+ */
+export const piSubagentRunner: SubagentRunner<AgentConfig> = {
+	runTask: runAgentTask,
+};
 
 /** Run an array of items through `fn` with a bounded concurrency pool. */
 export async function mapWithConcurrencyLimit<TIn, TOut>(
