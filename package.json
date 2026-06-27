@@ -43,6 +43,7 @@
     "test:e2e-context-value": "PI_TASKFLOW_PI_BIN=pi node --experimental-strip-types test/e2e-context-value.mts",
     "test:e2e-team": "PI_TASKFLOW_PI_BIN=pi node --experimental-strip-types test/e2e-team.mts",
     "test:e2e-spawn-subflow": "PI_TASKFLOW_PI_BIN=pi node --experimental-strip-types test/e2e-spawn-subflow.mts",
+    "test:e2e-codex": "node --experimental-strip-types test/e2e-codex.mts",
     "test:dogfood-cache": "node --experimental-strip-types test/dogfood-cache.mts"
   },
   "pi": {
