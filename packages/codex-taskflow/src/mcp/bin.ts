@@ -1,15 +1,19 @@
 #!/usr/bin/env node
 /**
- * Executable entry for the pi-taskflow MCP server.
+ * Executable entry for the pi-taskflow MCP server (the `codex-taskflow-mcp` bin).
  *
  * Register with Codex:
- *   codex mcp add taskflow -- node --experimental-strip-types \
- *     /abs/path/to/extensions/mcp/bin.ts
+ *   npm install -g codex-taskflow
+ *   codex mcp add taskflow -- codex-taskflow-mcp
  *
- * (or point at a compiled .js). Codex then launches this as a stdio MCP server
- * and the taskflow_* tools become available inside codex. The server discovers
- * saved flows + agents from its launch cwd, and runs each subagent as a codex
- * session, so no pi process is required.
+ * From a checkout of this repo (after `npm run build`):
+ *   codex mcp add taskflow -- node /abs/path/to/packages/codex-taskflow/dist/mcp/bin.js
+ *
+ * Codex then launches this as a stdio MCP server and the taskflow_* tools
+ * become available inside codex. The server discovers saved flows + agents
+ * from its launch cwd, and runs each subagent as a codex session, so no pi
+ * process is required. This file ships compiled to dist/mcp/bin.js, so no
+ * `--experimental-strip-types` flag is needed.
  */
 
 import { startMcpServer } from "./server.ts";
