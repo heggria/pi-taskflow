@@ -2,6 +2,38 @@
 
 All notable changes to pi-taskflow are documented here. This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 
+## [0.1.0] — 2026-06-27
+
+> **Monorepo split + first multi-host release.** pi-taskflow is now three
+> independently published packages built on a host-neutral engine, and the
+> taskflow engine runs on **both Pi and Codex**.
+
+### Added
+- **`taskflow-core`** — the host-neutral engine (DSL, runtime, cache, verify,
+  FlowIR, shared context tree, agent discovery, persistence, the
+  `SubagentRunner` contract). **Zero host-SDK dependency** (depends only on
+  typebox). Vendors the three small pi helpers it used (`StringEnum`,
+  `parseFrontmatter`, `getAgentDir`) so it is fully standalone.
+- **`codex-taskflow`** — run taskflow on OpenAI Codex: a `codex exec`-backed
+  subagent runner, plus a dependency-free MCP server (`codex-taskflow-mcp`) that
+  exposes `taskflow_run/list/show/verify/compile` to Codex users. Register with
+  `codex mcp add taskflow -- codex-taskflow-mcp`.
+- **Host-neutral `SubagentRunner` seam** — the engine drives any host via an
+  injected `runTask`; `piSubagentRunner` and `codexSubagentRunner` are the two
+  implementations.
+
+### Changed
+- **`pi-taskflow` is now the Pi adapter package** (same published name — existing
+  `pi install npm:pi-taskflow` users are unaffected). It depends on
+  `taskflow-core`.
+- Repo restructured to **npm workspaces** under `packages/*` (no build step; the
+  source still runs directly via `--experimental-strip-types`). CI publishes the
+  three packages in dependency order (core → pi → codex) on a `v*` tag.
+
+### Notes
+- All 864 tests pass across the three packages (713 core + 135 pi + 16 codex).
+- See `RELEASE.md` for the publish flow.
+
 ## [0.0.28] — 2026-06-27
 
 > Granular-reuse release: **incremental recompute goes from whole-flow to

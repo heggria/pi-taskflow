@@ -1,7 +1,8 @@
 name: Publish & Release
 
-# Publishes to npmjs.com and creates a GitHub Release,
-# when a v* tag is pushed (e.g. `git tag v0.0.16 && git push --tags`).
+# Publishes taskflow-core + pi-taskflow + codex-taskflow to npmjs.com and
+# creates a GitHub Release, when a v* tag is pushed (e.g. `git tag v0.1.0 &&
+# git push origin v0.1.0`). All three workspace versions must equal the tag.
 
 on:
   push:
@@ -23,7 +24,7 @@ jobs:
           registry-url: "https://registry.npmjs.org"
 
       - name: Install dependencies
-        run: npm install --registry https://registry.npmjs.org/
+        run: npm ci --registry https://registry.npmjs.org/ || npm install --registry https://registry.npmjs.org/
 
       - name: Typecheck
         run: npm run typecheck
@@ -34,6 +35,11 @@ jobs:
       - name: Verify tag matches workspace versions
         run: |
           TAG="${GITHUB_REF_NAME}"
+          EXPECT="v$(node -p "require('./package.json').version")"
+          if [ "$EXPECT" != "$TAG" ]; then
+            echo "::error::Tag $TAG does not match root version $EXPECT"
+            exit 1
+          fi
           for pkg in taskflow-core pi-taskflow codex-taskflow; do
             V="v$(node -p "require('./packages/$pkg/package.json').version")"
             if [ "$V" != "$TAG" ]; then
@@ -44,10 +50,25 @@ jobs:
 
       - name: Publish workspaces to npmjs.com
         # Order matters: taskflow-core first (the adapters depend on it).
+        # Idempotent: if this exact version is already on npm (e.g. a re-run or a
+        # partial earlier publish), skip that package instead of failing the job.
         run: |
-          npm publish -w taskflow-core --provenance
-          npm publish -w pi-taskflow --provenance
-          npm publish -w codex-taskflow --provenance
+          set -e
+          publish_one() {
+            local pkg="$1"
+            local name version
+            name="$(node -p "require('./packages/$pkg/package.json').name")"
+            version="$(node -p "require('./packages/$pkg/package.json').version")"
+            if npm view "$name@$version" version >/dev/null 2>&1; then
+              echo "::notice::$name@$version already published — skipping"
+            else
+              echo "Publishing $name@$version"
+              npm publish -w "$pkg" --provenance --access public
+            fi
+          }
+          publish_one taskflow-core
+          publish_one pi-taskflow
+          publish_one codex-taskflow
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
@@ -56,18 +77,22 @@ jobs:
           VERSION="${GITHUB_REF_NAME#v}"
           node -e "
             const fs = require('fs');
-            const content = fs.readFileSync('CHANGELOG.md', 'utf-8');
-            const lines = content.split('\n');
-            let capturing = false, body = [];
-            for (const line of lines) {
-              if (line.startsWith('## [' + process.argv[1] + ']')) { capturing = true; }
-              else if (capturing && line.startsWith('## [')) { break; }
-              if (capturing) body.push(line);
-            }
-            fs.writeFileSync('/tmp/release-notes.md', body.join('\n').trim());
+            let body = [];
+            try {
+              const content = fs.readFileSync('CHANGELOG.md', 'utf-8');
+              const lines = content.split('\n');
+              let capturing = false;
+              for (const line of lines) {
+                if (line.startsWith('## [' + process.argv[1] + ']')) { capturing = true; }
+                else if (capturing && line.startsWith('## [')) { break; }
+                if (capturing) body.push(line);
+              }
+            } catch {}
+            const text = body.join('\n').trim();
+            fs.writeFileSync('/tmp/release-notes.md', text || ('Release ' + process.argv[1] + ' \u2014 taskflow-core, pi-taskflow, codex-taskflow.'));
           " "$VERSION"
           gh release create "$GITHUB_REF_NAME" \
             --notes-file /tmp/release-notes.md \
-            --title "pi-taskflow $VERSION"
+            --title "v$VERSION"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

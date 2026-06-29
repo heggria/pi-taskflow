@@ -44,7 +44,7 @@ npm publish -w codex-taskflow  --registry=https://registry.npmjs.org/ --provenan
 `publishConfig.access: public` is set on each package, so scoped/unscoped both publish publicly.
 
 > **Note on `taskflow-core` as a dependency.** `pi-taskflow` / `codex-taskflow`
-> declare `"taskflow-core": "0.0.28"` (an exact version, not `workspace:*`),
+> declare `"taskflow-core": "0.1.0"` (an exact version, not `workspace:*`),
 > so the published tarballs resolve the real npm package once it exists. Always
 > publish `taskflow-core` first and bump all three in lockstep.
 
@@ -55,7 +55,7 @@ three package versions match the tag, publishes them in order, and cuts a GitHub
 Release from the matching `CHANGELOG.md` section.
 
 ```sh
-git tag v0.0.29 && git push origin v0.0.29
+git tag v0.1.0 && git push origin v0.1.0
 ```
 
 ## Verify after publish
