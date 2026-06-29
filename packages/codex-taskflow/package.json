@@ -1,6 +1,6 @@
 {
   "name": "codex-taskflow",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Run pi-taskflow on OpenAI Codex: a Codex subagent runner plus an MCP server that exposes taskflow_* tools to Codex users.",
   "keywords": [
     "codex",
@@ -28,7 +28,9 @@
   "bin": {
     "codex-taskflow-mcp": "./dist/mcp/bin.js"
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "prepublishOnly": "npm run build"
@@ -37,6 +39,6 @@
     "access": "public"
   },
   "dependencies": {
-    "taskflow-core": "0.1.0"
+    "taskflow-core": "0.1.1"
   }
 }

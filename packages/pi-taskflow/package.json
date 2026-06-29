@@ -1,6 +1,6 @@
 {
   "name": "pi-taskflow",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "A declarative, verifiable graph of task nodes for the Pi coding agent — statically verified before it runs, with dynamic fan-out, gates, isolated subagent context, resumable runs, and saveable commands.",
   "keywords": [
     "pi-package",
@@ -29,7 +29,10 @@
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
-  "files": ["dist", "skills"],
+  "files": [
+    "dist",
+    "skills"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "prepublishOnly": "npm run build"
@@ -38,12 +41,16 @@
     "access": "public"
   },
   "pi": {
-    "extensions": ["./dist/index.js"],
-    "skills": ["./skills"],
+    "extensions": [
+      "./dist/index.js"
+    ],
+    "skills": [
+      "./skills"
+    ],
     "image": "https://raw.githubusercontent.com/heggria/pi-taskflow/main/assets/social-preview.png"
   },
   "dependencies": {
-    "taskflow-core": "0.1.0"
+    "taskflow-core": "0.1.1"
   },
   "peerDependencies": {
     "@earendil-works/pi-agent-core": "*",

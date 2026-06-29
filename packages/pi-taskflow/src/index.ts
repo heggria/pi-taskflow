@@ -980,13 +980,61 @@ export default function (pi: ExtensionAPI) {
 
 				// detached-runner lives in taskflow-core (spawn-only entry). Resolve it
 				// from the installed package so it works under workspaces and when
-				// pi-taskflow is installed from npm.
+				// pi-taskflow is installed from npm. NOTE: the specifier is given WITHOUT
+				// the `.js` suffix — taskflow-core's `"./*"` export rewrites `<x>` to
+				// `dist/<x>.js`, so passing `detached-runner.js` here would resolve to
+				// `dist/detached-runner.js.js` (ENOENT). The runner is precompiled to
+				// `.js`, so no `--experimental-strip-types` flag is needed (Node refuses
+				// to strip `.ts` under node_modules, which is exactly why we ship JS).
 				const runnerScript = (await import("node:url")).fileURLToPath(
-					import.meta.resolve("taskflow-core/detached-runner.js"),
+					import.meta.resolve("taskflow-core/detached-runner"),
 				);
-				const child = spawn(process.execPath, ["--experimental-strip-types", runnerScript, tmpFile], {
+				// Capture stderr so a crashed child is debuggable instead of invisible.
+				const child = spawn(process.execPath, [runnerScript, tmpFile], {
 					detached: true,
-					stdio: "ignore",
+					stdio: ["ignore", "ignore", "pipe"],
+				});
+				let childErr = "";
+				child.stderr?.on("data", (chunk: Buffer) => { childErr += chunk.toString(); });
+				// Race-safe crash guard: if the child dies before reaching a terminal
+				// state, mark the run failed so it is never stuck at "running" forever.
+				// Guarded by pid + status so we never clobber a genuine terminal state
+				// the runner may have persisted between spawn and this callback.
+				const markFailedOnEarlyExit = (exitCode: number | null) => {
+					if (exitCode === 0) return; // clean exit — runner persists its own state
+					try {
+						const cur = loadRun(ctx.cwd, state.runId);
+						if (cur && cur.status === "running" && cur.pid === child.pid) {
+							cur.status = "failed";
+							// Record the crash reason in a synthetic phase so it is persisted,
+							// pollable, and debuggable (RunState has no run-level error field).
+							cur.phases["__detach__"] = {
+								id: "__detach__",
+								status: "failed",
+								endedAt: Date.now(),
+								error: childErr.trim()
+									? `Detached runner exited with code ${exitCode}: ${childErr.trim().slice(0, 2000)}`
+									: `Detached runner exited with code ${exitCode} before completing.`,
+							};
+							saveRun(cur, { maxKeep: 50, maxAgeDays: 14 });
+						}
+					} catch { /* best-effort: never let a handler throw */ }
+				};
+				child.on("exit", markFailedOnEarlyExit);
+				child.on("error", (err) => {
+					try {
+						const cur = loadRun(ctx.cwd, state.runId);
+						if (cur && cur.status === "running") {
+							cur.status = "failed";
+							cur.phases["__detach__"] = {
+								id: "__detach__",
+								status: "failed",
+								endedAt: Date.now(),
+								error: `Failed to spawn detached runner: ${err.message}`,
+							};
+							saveRun(cur, { maxKeep: 50, maxAgeDays: 14 });
+						}
+					} catch { /* best-effort */ }
 				});
 				child.unref();
 

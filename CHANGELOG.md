@@ -2,6 +2,22 @@
 
 All notable changes to pi-taskflow are documented here. This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 
+## [0.1.1] — Unreleased
+
+### Fixed
+- **Detached (background) runs crashed on launch** (issue #3). The detached
+  runner specifier resolved to `dist/detached-runner.js.js` (double `.js`) under
+  taskflow-core's `"./*"` export rewrite, so the spawned child died at import
+  with `Cannot find module`. Now resolved with a suffix-less specifier
+  (`taskflow-core/detached-runner`) → `dist/detached-runner.js`. The stale
+  `--experimental-strip-types` flag (the runner ships compiled) is dropped.
+- **A crashed detached runner no longer leaves the run stuck at `running`
+  forever** (issue #3, secondary). The host now pipes stderr and attaches
+  `exit`/`error` handlers that, when the child dies before reaching a terminal
+  state, persist `status: "failed"` with the captured stderr recorded in a
+  pollable synthetic phase (`__detach__`). Race-safe: guarded by pid + status so
+  a genuine terminal state the runner persisted is never clobbered.
+
 ## [0.1.0] — 2026-06-27
 
 > **Monorepo split + first multi-host release.** pi-taskflow is now three
