@@ -184,3 +184,79 @@ test("detached: crash guard does NOT clobber a genuine terminal state", () => {
 		rmSync(cwd, { recursive: true, force: true });
 	}
 });
+
+// ---------------------------------------------------------------------------
+// Bug 3 (deeper, found while verifying issue #3): the detached-runner used to
+// call executeTaskflow WITHOUT a runTask. Core is host-neutral and cannot spawn
+// pi/codex, so every phase failed with "No subagent runner injected" — i.e.
+// detached runs were broken even when the module loaded. The fix has the host
+// serialize a runnerModule/runnerExport into the context file, which the runner
+// dynamically imports. This test drives the REAL detached-runner end-to-end and
+// asserts the runner is actually invoked (not the no-runner stub).
+// ---------------------------------------------------------------------------
+
+test("detached-runner: injects the host runner so phases do not hit 'No subagent runner injected'", async () => {
+	const resolved = fileURLToPath(import.meta.resolve(DETACHED_RUNNER_SPECIFIER));
+	const cwd = mkdtempSync(join(tmpdir(), "issue3-runner-"));
+	try {
+		const def: Taskflow = {
+			name: "runner-inject",
+			phases: [{ id: "p1", type: "agent", agent: "executor", task: "say hi" }],
+		};
+		const runId = "runner-inject-test";
+		saveRun({
+			runId, flowName: "runner-inject", def, args: {},
+			status: "running", phases: {}, createdAt: Date.now(), updatedAt: Date.now(), cwd,
+		});
+
+		const ctxFile = join(tmpdir(), `issue3-runner-ctx-${process.pid}-${Date.now()}.json`);
+		// Mirror the host: resolve the runner module from pi-taskflow itself so it
+		// works under both dev (.ts) and prod (.js) conditions.
+		const runnerModule = fileURLToPath(import.meta.resolve("../src/runner.ts"));
+		writeFileSync(ctxFile, JSON.stringify({
+			runId, defName: "runner-inject", args: {}, cwd,
+			runnerModule,
+			runnerExport: "piSubagentRunner",
+		}));
+
+		// Run the real detached-runner. The child must run under the same flags as
+		// this test process so .ts sources load under dev conditions (prod builds
+		// ship .js and need none of this).
+		const nodeFlags = process.execArgv.filter((a) =>
+			a.startsWith("--conditions=") || a.startsWith("--experimental-strip"));
+		const exitCode = await new Promise<number | null>((resolve) => {
+			const child = spawn(process.execPath, [...nodeFlags, resolved, ctxFile], {
+				stdio: ["ignore", "pipe", "pipe"],
+			});
+			let stderr = "";
+			child.stderr.on("data", (c: Buffer) => { stderr += c.toString(); });
+			child.on("exit", (code) => {
+				// The defining regression: the no-runner stub message must NOT appear
+				// anywhere — not on stderr and not in the persisted phase error.
+				assert.doesNotMatch(
+					stderr,
+					/No subagent runner injected/,
+					"runner must be injected (no 'No subagent runner injected' on stderr)",
+				);
+				resolve(code);
+			});
+			child.on("error", () => resolve(null));
+		});
+
+		assert.notEqual(exitCode, null, "detached-runner must exit (not hang)");
+
+		// The persisted phase must also not carry the no-runner stub error. Without
+		// model access the phase will fail for OTHER reasons (model load), which is
+		// fine — the contract under test is purely that a real runner was injected.
+		const after = loadRun(cwd, runId);
+		assert.ok(after, "run must be persisted by the detached-runner");
+		const phaseErr = after!.phases["p1"]?.error ?? "";
+		assert.doesNotMatch(
+			phaseErr,
+			/No subagent runner injected/,
+			"persisted phase error must not be the no-runner stub — the host runner was injected",
+		);
+	} finally {
+		rmSync(cwd, { recursive: true, force: true });
+	}
+});

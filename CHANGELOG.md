@@ -11,6 +11,16 @@ All notable changes to pi-taskflow are documented here. This project follows [Ke
   with `Cannot find module`. Now resolved with a suffix-less specifier
   (`taskflow-core/detached-runner`) → `dist/detached-runner.js`. The stale
   `--experimental-strip-types` flag (the runner ships compiled) is dropped.
+- **Detached runs could never execute any phase** (issue #3, deeper). The
+  pre-refactor runtime defaulted `runTask` to `runAgentTask` (same package), but
+  the host-neutral split changed that default to a `noRunnerInjected` stub — and
+  `detached-runner.ts` called `executeTaskflow` with no `runTask`, so every
+  detached phase failed with "No subagent runner injected" even after the module
+  loaded. Fixed: the host (pi `index.ts`) now serializes a `runnerModule`/
+  `runnerExport` (resolved from its own package, so it works under both workspaces
+  and npm installs) into the detached context file, and the detached-runner
+  dynamically imports it and injects `runTask`. Core stays host-neutral — it
+  learns the runner from the host at runtime.
 - **A crashed detached runner no longer leaves the run stuck at `running`
   forever** (issue #3, secondary). The host now pipes stderr and attaches
   `exit`/`error` handlers that, when the child dies before reaching a terminal

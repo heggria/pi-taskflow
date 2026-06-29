@@ -971,11 +971,20 @@ export default function (pi: ExtensionAPI) {
 				const os = await import("node:os");
 				const path = await import("node:path");
 				const tmpFile = path.join(os.tmpdir(), `taskflow-detach-${state.runId}.json`);
+				// Resolve the host adapter's runner module from THIS package so it
+				// works under both workspaces (dev -> src/.ts) and npm installs (->
+				// dist/.js). Core is host-neutral and cannot spawn pi itself, so the
+				// detached process needs to dynamically import a runTask from here.
+				const runnerModule = (await import("node:url")).fileURLToPath(
+					import.meta.resolve("./runner.ts"),
+				);
 				writeFileSync(tmpFile, JSON.stringify({
 					runId: state.runId,
 					defName: def.name,
 					args,
 					cwd: ctx.cwd,
+					runnerModule,
+					runnerExport: "piSubagentRunner",
 				}));
 
 				// detached-runner lives in taskflow-core (spawn-only entry). Resolve it

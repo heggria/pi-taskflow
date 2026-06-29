@@ -19,6 +19,14 @@ interface DetachContext {
 	defName: string;
 	args: Record<string, unknown>;
 	cwd: string;
+	/** Bare specifier of the host adapter's runner module, e.g.
+	 *  "pi-taskflow/dist/runner.js". The detached process can't import the host
+	 *  adapter statically (core is host-neutral), so the host tells it where to
+	 *  find a `runTask`. Resolved via dynamic import at run time. */
+	runnerModule?: string;
+	/** Named export on runnerModule exposing a `SubagentRunner.runTask`
+	 *  (defaults to "piSubagentRunner"). */
+	runnerExport?: string;
 }
 
 const contextPath = process.argv[2];
@@ -51,11 +59,34 @@ try {
 	const scope: AgentScope = state.def.agentScope ?? "user";
 	const { agents } = discoverAgents(ctx.cwd, scope, settings.modelRoles, settings.taskflow);
 
+	// The host adapter injects its subagent runner. Core is host-neutral and
+	// CANNOT spawn pi/codex itself, so without this every phase would fail with
+	// "No subagent runner injected". Resolve the runner via a dynamic import of
+	// the module path the host serialized into the context file.
+	let runTask: import("./host/runner-types.ts").SubagentRunner["runTask"] | undefined;
+	if (ctx.runnerModule) {
+		try {
+			const runnerMod = await import(ctx.runnerModule);
+			const exportName = ctx.runnerExport ?? "piSubagentRunner";
+			const runner = runnerMod[exportName];
+			if (runner && typeof runner.runTask === "function") {
+				runTask = runner.runTask;
+			} else {
+				console.error(`[detached-runner] '${exportName}' on '${ctx.runnerModule}' is not a SubagentRunner (missing runTask)`);
+			}
+		} catch (e) {
+			console.error(`[detached-runner] Failed to load runner module '${ctx.runnerModule}': ${e instanceof Error ? e.message : String(e)}`);
+		}
+	} else {
+		console.error("[detached-runner] No runnerModule in context — phases will fail with 'No subagent runner injected'");
+	}
+
 	const result = await executeTaskflow(state, {
 		cwd: ctx.cwd,
 		agents,
 		globalThinking: settings.globalThinking,
 		persist: (s) => saveRun(s, cleanupConfig),
+		runTask,
 		// No requestApproval — approval phases auto-reject in detached/CI mode
 		// (safety: approval gates are never bypassed; the run records the rejection).
 		loadFlow: (name: string) => getFlow(ctx.cwd, name)?.def,
