@@ -2,6 +2,26 @@
 
 All notable changes to pi-taskflow are documented here. This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 
+## [0.1.2] — Unreleased
+
+### Fixed
+- **codex-taskflow MCP server failed every phase with `Model metadata for
+  {{fast}} not found`** (same refactor-omission class as issue #3). The MCP
+  server called `discoverAgents(cwd, "both")` without the model-roles map, so
+  the built-in agents' `{{fast}}`/`{{strong}}`/… placeholders were never
+  resolved. Fixed: it now calls `readSubagentSettings()` and passes
+  `modelRoles` through, exactly like the pi adapter.
+- **codex-runner passed pi-provider model ids to `codex exec`, which rejected
+  them.** Once the placeholders resolved, the resulting ids
+  (`openrouter/deepseek/...`, `anthropic/glm-5.2:xhigh`) are pi's provider
+  namespacing — Codex model ids are flat (`gpt-5.5`, `claude-sonnet-4-6`) and
+  it errors with `Model metadata for <id> not found`. Fixed: `runCodexAgentTask`
+  now drops a model that still looks like a pi-provider path (contains `/`) or an
+  unresolved `{{placeholder}}`, so `codex exec` falls back to its own configured
+  default model. A user who sets a real Codex model id (no `/`) still gets it
+  passed through. Verified end-to-end: a single-agent flow now runs to
+  completion on Codex and returns the model's output.
+
 ## [0.1.1] — 2026-06-29
 
 ### Fixed

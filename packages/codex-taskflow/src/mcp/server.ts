@@ -31,6 +31,7 @@ import {
 	desugar,
 	isShorthand,
 	validateTaskflow,
+	readSubagentSettings,
 	type RuntimeDeps,
 	type RunState,
 	type Taskflow,
@@ -153,7 +154,12 @@ export function makeToolHandlers(cwd: string): Record<string, (args: Record<stri
 			const v = validateTaskflow(def);
 			if (!v.ok) return textContent(`Flow is invalid:\n- ${v.errors.join("\n- ")}`, true);
 
-			const { agents } = discoverAgents(cwd, "both");
+			// Resolve model roles (e.g. {{fast}} -> a real model id) so the built-in
+			// agents' placeholder models map to something codex can launch. This is
+			// the same lookup the pi adapter does; without it every phase fails with
+			// "Model metadata for {{fast}} not found".
+			const settings = readSubagentSettings();
+			const { agents } = discoverAgents(cwd, "both", settings.modelRoles, settings.taskflow);
 			const deps: RuntimeDeps = {
 				cwd,
 				agents,

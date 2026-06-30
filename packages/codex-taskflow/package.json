@@ -1,6 +1,6 @@
 {
   "name": "codex-taskflow",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Run pi-taskflow on OpenAI Codex: a Codex subagent runner plus an MCP server that exposes taskflow_* tools to Codex users.",
   "keywords": [
     "codex",
@@ -39,6 +39,6 @@
     "access": "public"
   },
   "dependencies": {
-    "taskflow-core": "0.1.1"
+    "taskflow-core": "0.1.2"
   }
 }

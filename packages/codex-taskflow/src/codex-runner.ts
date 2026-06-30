@@ -190,6 +190,17 @@ export async function runCodexAgentTask(
 	const sandbox = sandboxForTools(tools);
 	void globalThinking; // codex has no thinking-level flag on exec; reserved.
 
+	// The agent.model comes from the shared modelRoles table, which is written in
+	// the pi provider format (e.g. "openrouter/deepseek/...", "anthropic/glm-5.2:xhigh"
+	// — note the `/` provider prefix and `:thinking` suffix). Those ids are pi's
+	// namespacing and Codex does not recognise them ("Model metadata for ... not
+	// found"). Codex model ids are flat (e.g. "gpt-5.5", "claude-sonnet-4-6"). So:
+	// if the resolved model still looks like a pi-provider path (contains "/"),
+	// drop it and let `codex exec` fall back to its own configured default model.
+	// A user who wants a specific Codex model can set it directly (no "/") and it
+	// will be passed through. Likewise an unresolved {{placeholder}} is dropped.
+	const codexModel = model && !model.includes("/") && !/^\{\{.*\}\}$/.test(model) ? model : undefined;
+
 	// codex exec [PROMPT] --json --skip-git-repo-check -s <sandbox> [-m model] [-C cwd]
 	// The agent's system prompt is prepended to the task as guidance, since
 	// `codex exec` has no separate append-system-prompt flag. We keep it compact.
@@ -198,7 +209,7 @@ export async function runCodexAgentTask(
 		: `Task: ${task}`;
 
 	const args: string[] = ["exec", "--json", "--skip-git-repo-check", "-s", sandbox];
-	if (model) args.push("-m", model);
+	if (codexModel) args.push("-m", codexModel);
 	const cwd = opts.cwd ?? defaultCwd;
 	if (cwd) args.push("-C", cwd);
 	args.push(fullPrompt);
