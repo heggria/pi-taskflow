@@ -36,6 +36,40 @@ codex mcp list      # → taskflow … enabled  (npx -y -p codex-taskflow codex-
 The bundled skill tells Codex *when* to reach for the tools (multi-phase or
 fan-out work), so you usually don't have to name them explicitly.
 
+## Long-running flows and the tool-call timeout
+
+`taskflow_run` returns only after the **whole DAG finishes** — intermediate
+phase outputs stay in the runtime, so from Codex's side it's a single tool call
+that can run for many minutes. Codex applies a per-server MCP **tool-call
+timeout**; if the call outlives it, Codex abandons the result client-side even
+though the run keeps executing server-side.
+
+To stop large flows from being cut off, the plugin's `.mcp.json` ships a
+30-minute default:
+
+```json
+{
+  "mcpServers": {
+    "taskflow": {
+      "command": "npx",
+      "args": ["-y", "-p", "codex-taskflow", "codex-taskflow-mcp"],
+      "tool_timeout_sec": 1800
+    }
+  }
+}
+```
+
+Override it per machine in `~/.codex/config.toml` (this wins over the plugin
+default):
+
+```toml
+[mcp_servers.taskflow]
+tool_timeout_sec = 3600
+```
+
+If a flow is genuinely huge, also consider splitting it into a few smaller
+`taskflow_run` calls so each returns well inside the window.
+
 ## Alternative: register the MCP server manually
 
 If you'd rather not use the plugin, install the package and register its

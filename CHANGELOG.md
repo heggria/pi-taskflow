@@ -24,6 +24,13 @@ All notable changes to taskflow are documented here. This project follows [Keep 
   (no separate global install), and a routing `SKILL.md` so Codex reaches for the
   `taskflow_*` tools on multi-phase / fan-out work automatically. A repo-root
   `.claude-plugin/marketplace.json` makes the plugin discoverable.
+- **`tool_timeout_sec: 1800` in the Codex plugin's `.mcp.json`.** Codex applies a
+  per-server MCP tool-call timeout; when unset the plugin inherited Codex's
+  (short) default, so a long multi-phase `taskflow_run` — which returns only
+  after the whole DAG finishes — could be abandoned client-side while the run
+  kept executing server-side. The plugin now ships a 30-minute default so large
+  flows aren't cut off. Override per machine in `~/.codex/config.toml` under
+  `[mcp_servers.taskflow]` if you need more or less.
 
 ## [0.1.2] — 2026-06-30
 
