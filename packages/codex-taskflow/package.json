@@ -23,6 +23,9 @@
     "directory": "packages/codex-taskflow"
   },
   "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
   "main": "./dist/codex-runner.js",
   "types": "./dist/codex-runner.d.ts",
   "bin": {
