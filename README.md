@@ -74,7 +74,7 @@ Here's the wall you hit with raw subagents: you describe a multi-step plan in pr
 | **Topology** | chain / flat parallel | **DAG with layered concurrency + routing** |
 | **Intermediate results** | in your context window | **in the runtime — not your context** |
 | **Scale** | a handful of tasks | **dynamic `map` fan-out over dozens of items** |
-| **Reusable** | re-described every time | **saved as `/tf:<name>`** |
+| **Reusable** | re-described every time | **saved by name (`/tf:<name>` on Pi; `taskflow_run` by name on Codex)** |
 | **Resumable** | ✗ | **✓ cross-session — cached phases auto-skip** |
 | **Quality gates** | ✗ | **`gate` phases that halt on `VERDICT: BLOCK`** |
 | **Conditional routing** | ✗ | **`when` guards + `join: any` OR-joins** |
