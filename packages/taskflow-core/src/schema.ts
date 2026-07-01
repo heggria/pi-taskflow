@@ -551,6 +551,10 @@ export function validateTaskflow(def: unknown, opts: ValidationOptions = {}): Va
 		}
 		if (type === "map") {
 			if (!p.over) errors.push(`Phase '${p.id}' (map) requires 'over'`);
+			else if (typeof p.over !== "string")
+				errors.push(
+					`Phase '${p.id}' (map): 'over' must be a string interpolation ref (e.g. "{steps.scan.json}"), not a ${Array.isArray(p.over) ? "literal array" : typeof p.over}. To fan out over a fixed list, emit it from an upstream phase and reference that phase's .json.`,
+				);
 			if (!p.task) errors.push(`Phase '${p.id}' (map) requires 'task'`);
 		}
 		if (type === "parallel") {

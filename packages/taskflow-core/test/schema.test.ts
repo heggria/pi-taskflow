@@ -25,6 +25,15 @@ test("validateTaskflow: rejects missing name / phases", () => {
 test("validateTaskflow: per-type requirements", () => {
 	assert.equal(validateTaskflow({ name: "x", phases: [{ id: "p", type: "agent" }] }).ok, false); // no task
 	assert.equal(validateTaskflow({ name: "x", phases: [{ id: "p", type: "map", task: "t" }] }).ok, false); // no over
+	// over must be a string ref, not a literal array/object (would crash directRef at runtime)
+	assert.equal(
+		validateTaskflow({ name: "x", phases: [{ id: "p", type: "map", task: "t", over: ["a", "b"] }] }).ok,
+		false,
+	);
+	assert.match(
+		validateTaskflow({ name: "x", phases: [{ id: "p", type: "map", task: "t", over: ["a"] }] }).errors.join("\n"),
+		/literal array/,
+	);
 	assert.equal(validateTaskflow({ name: "x", phases: [{ id: "p", type: "parallel" }] }).ok, false); // no branches
 	assert.equal(validateTaskflow({ name: "x", phases: [{ id: "p", type: "reduce", task: "t" }] }).ok, false); // no from
 	assert.equal(validateTaskflow({ name: "x", phases: [{ id: "p", type: "flow" }] }).ok, false); // no use

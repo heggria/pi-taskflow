@@ -4,6 +4,15 @@ All notable changes to taskflow are documented here. This project follows [Keep 
 
 ## [Unreleased]
 
+### Fixed
+- **A `map` phase with a literal-array `over` crashed the whole run** with
+  `over.match is not a function`. The map runtime assumed `over` was always a
+  string interpolation ref (e.g. `{steps.scan.json}`) and called `.match()` on
+  it. Two-layer fix: `validateTaskflow` now rejects a non-string `over` up front
+  with an actionable message (emit the list from an upstream phase and reference
+  its `.json`), and `directRef` guards against non-string input so the runtime
+  fails a phase gracefully instead of throwing even if validation is bypassed.
+
 ### Changed
 - **Rebrand: `pi-taskflow` → taskflow.** The project is now presented as a
   host-neutral, multi-host orchestration runtime (Pi **and** Codex), not a

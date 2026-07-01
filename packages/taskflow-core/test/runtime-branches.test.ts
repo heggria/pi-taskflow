@@ -600,3 +600,19 @@ test("parseTournamentWinner: fail-open includes reason", () => {
 	assert.equal(r.winner, 1);
 	assert.match(r.reason ?? "", /no parseable winner/);
 });
+
+test("map: non-string 'over' (bypassing validation) fails gracefully, never throws", async () => {
+	// A literal-array `over` is rejected by validateTaskflow, but if it reaches
+	// the runtime (direct executeTaskflow call), directRef must not crash with
+	// "over.match is not a function" — it should fail the phase cleanly.
+	const def = {
+		name: "bad-over",
+		phases: [
+			{ id: "m", type: "map", agent: "a", task: "do {item}", over: ["x", "y"] as unknown as string },
+		],
+	} as Taskflow;
+	const deps = baseDeps(mockRunner((t) => `ran:${t}`));
+	const res = await executeTaskflow(mkState(def), deps);
+	assert.equal(res.state.phases.m.status, "failed");
+	assert.match(res.state.phases.m.error ?? "", /did not resolve to an array/);
+});

@@ -1775,7 +1775,8 @@ async function executePhaseInner(
 }
 
 /** Resolve a `{steps.x.json}`-style ref directly to its parsed value (bypassing stringify). */
-function directRef(over: string, state: RunState): unknown {
+function directRef(over: unknown, state: RunState): unknown {
+	if (typeof over !== "string") return undefined;
 	const m = over.match(/^\{steps\.([a-zA-Z0-9_-]+)\.(output|json)(?:\.([a-zA-Z0-9_-]+(?:\.[a-zA-Z0-9_-]+)*))?\}$/);
 	if (!m) return undefined;
 	const step = state.phases[m[1]];
