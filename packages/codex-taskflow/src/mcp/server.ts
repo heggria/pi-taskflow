@@ -277,10 +277,16 @@ export function makeToolHandlers(cwd: string): Record<string, (args: Record<stri
 
 		taskflow_verify: async (args) => {
 			const def = resolveFlow(cwd, args);
-			// Two layers: validateTaskflow catches structural errors (cycles, missing
-			// deps, undefined refs); verifyTaskflow adds the deeper static-quality
-			// issues. Combine both so the tool matches the `/tf verify` behavior.
+			// Structural validation FIRST — verifyTaskflow assumes a well-formed flow
+			// (it iterates flow.phases) and throws on malformed input like a missing
+			// `phases`. Return the structured errors instead of crashing.
 			const val = validateTaskflow(def);
+			if (!val.ok) {
+				const { errorCount, warningCount, text } = issueBlocks([], val.errors, val.warnings);
+				return textContent(`✗ verification FAILED — ${count(errorCount, "error")}, ${count(warningCount, "warning")}${text}`, true);
+			}
+			// verifyTaskflow adds deeper static-quality issues on top of the
+			// structural guarantees validateTaskflow just confirmed.
 			const result = verifyTaskflow(def as Parameters<typeof verifyTaskflow>[0]);
 			const { errorCount, warningCount, text } = issueBlocks(result.issues, val.errors, val.warnings);
 			const passed = val.ok && result.ok && errorCount === 0;
@@ -296,6 +302,16 @@ export function makeToolHandlers(cwd: string): Record<string, (args: Record<stri
 
 		taskflow_compile: async (args) => {
 			const def = resolveFlow(cwd, args);
+			// Validate FIRST: compileTaskflow / renderFlowSvg normalize a missing
+			// `phases` to [] (false-passing an invalid flow) and crash on a non-string
+			// map `over` (truncate assumes a string). Reject structurally-bad flows
+			// with their errors instead of rendering a misleading or broken diagram.
+			const val = validateTaskflow(def);
+			if (!val.ok) {
+				const { errorCount, warningCount, text } = issueBlocks([], val.errors, val.warnings);
+				const caption = `${def.name ?? "taskflow"} — ${count(errorCount, "error")}, ${count(warningCount, "warning")} · ✗ FAIL`;
+				return textContent(`${caption}${text}`, true);
+			}
 			const result = compileTaskflow(def);
 			const v = result.verification;
 			const errs = v.issues.filter((i) => i.severity === "error").length;
