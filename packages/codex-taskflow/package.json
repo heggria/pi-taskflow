@@ -13,13 +13,13 @@
   ],
   "license": "MIT",
   "author": "heggria <bshengtao@gmail.com>",
-  "homepage": "https://github.com/heggria/pi-taskflow#readme",
+  "homepage": "https://github.com/heggria/taskflow#readme",
   "bugs": {
-    "url": "https://github.com/heggria/pi-taskflow/issues"
+    "url": "https://github.com/heggria/taskflow/issues"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/heggria/pi-taskflow.git",
+    "url": "git+https://github.com/heggria/taskflow.git",
     "directory": "packages/codex-taskflow"
   },
   "type": "module",

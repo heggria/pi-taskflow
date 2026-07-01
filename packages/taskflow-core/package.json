@@ -11,10 +11,10 @@
   ],
   "license": "MIT",
   "author": "heggria <bshengtao@gmail.com>",
-  "homepage": "https://github.com/heggria/pi-taskflow#readme",
+  "homepage": "https://github.com/heggria/taskflow#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/heggria/pi-taskflow.git",
+    "url": "git+https://github.com/heggria/taskflow.git",
     "directory": "packages/taskflow-core"
   },
   "type": "module",

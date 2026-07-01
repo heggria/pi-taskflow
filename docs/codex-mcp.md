@@ -1,6 +1,6 @@
-# Using pi-taskflow from Codex (MCP)
+# Using taskflow from Codex (MCP)
 
-pi-taskflow runs on [Codex](https://github.com/openai/codex) in two directions,
+taskflow runs on [Codex](https://github.com/openai/codex) in two directions,
 both built on the host-neutral `SubagentRunner` seam
 (`packages/taskflow-core/src/host/runner-types.ts`):
 
@@ -11,12 +11,35 @@ both built on the host-neutral `SubagentRunner` seam
    (`packages/codex-taskflow/src/mcp/`). This is the direction described here.
 
 The MCP server is dependency-free: it speaks JSON-RPC 2.0 over stdio on Node
-built-ins (`packages/codex-taskflow/src/mcp/jsonrpc.ts`), so pi-taskflow keeps its
+built-ins (`packages/codex-taskflow/src/mcp/jsonrpc.ts`), so taskflow keeps its
 **zero runtime dependencies** guarantee — no `@modelcontextprotocol/sdk`.
 
-## Register with Codex
+## Install (recommended): the Codex plugin
 
-Install the package, then register its `codex-taskflow-mcp` bin:
+The zero-config path. Install taskflow as a Codex **plugin** and its MCP server
+plus a routing skill are registered automatically — no manual `codex mcp add`,
+no config editing:
+
+```sh
+codex plugin marketplace add heggria/taskflow
+codex plugin add taskflow@taskflow
+```
+
+The plugin declares its MCP server via `npx` (`codex-taskflow`), so the server
+is fetched and launched on demand — nothing else to install globally. Verify:
+
+```sh
+codex plugin list   # → taskflow@taskflow  installed, enabled
+codex mcp list      # → taskflow … enabled  (npx -y -p codex-taskflow codex-taskflow-mcp)
+```
+
+The bundled skill tells Codex *when* to reach for the tools (multi-phase or
+fan-out work), so you usually don't have to name them explicitly.
+
+## Alternative: register the MCP server manually
+
+If you'd rather not use the plugin, install the package and register its
+`codex-taskflow-mcp` bin yourself:
 
 ```sh
 npm install -g codex-taskflow
@@ -28,7 +51,7 @@ From a checkout of this repo (no install), point Codex at the built bin instead:
 ```sh
 npm run build
 codex mcp add taskflow -- \
-  node /abs/path/to/pi-taskflow/packages/codex-taskflow/dist/mcp/bin.js
+  node /abs/path/to/taskflow/packages/codex-taskflow/dist/mcp/bin.js
 ```
 
 Verify it registered:
@@ -68,7 +91,8 @@ Inside a codex session, just ask — codex will call the tools:
 ## Remove
 
 ```sh
-codex mcp remove taskflow
+codex plugin remove taskflow@taskflow   # if installed as a plugin
+codex mcp remove taskflow               # if registered manually
 ```
 
 ## Proof / tests

@@ -1,6 +1,29 @@
 # Changelog
 
-All notable changes to pi-taskflow are documented here. This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
+All notable changes to taskflow are documented here. This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
+
+## [Unreleased]
+
+### Changed
+- **Rebrand: `pi-taskflow` → taskflow.** The project is now presented as a
+  host-neutral, multi-host orchestration runtime (Pi **and** Codex), not a
+  Pi-only extension. GitHub repo renamed `heggria/pi-taskflow` →
+  `heggria/taskflow`; all docs, badges, hero/social images, and the 6 i18n
+  READMEs updated. **npm package names are unchanged** (`taskflow-core`,
+  `pi-taskflow`, `codex-taskflow`) and the `pi-taskflow` package keeps its
+  `pi-*` keywords + `pi` manifest field, so Pi package indexing and
+  `pi install npm:pi-taskflow` are unaffected.
+- MCP `serverInfo` now reports `taskflow` / `0.1.2` (was `pi-taskflow` /
+  `0.0.28`).
+
+### Added
+- **Codex plugin** (`packages/codex-taskflow/plugin/`) for zero-config,
+  plug-and-play install: `codex plugin marketplace add heggria/taskflow` then
+  `codex plugin add taskflow@taskflow`. Ships a `.codex-plugin/plugin.json`
+  manifest, a `.mcp.json` that launches the MCP server via `npx codex-taskflow`
+  (no separate global install), and a routing `SKILL.md` so Codex reaches for the
+  `taskflow_*` tools on multi-phase / fan-out work automatically. A repo-root
+  `.claude-plugin/marketplace.json` makes the plugin discoverable.
 
 ## [0.1.2] — 2026-06-30
 

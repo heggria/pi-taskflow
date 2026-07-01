@@ -1,12 +1,12 @@
-# Contributing to pi-taskflow
+# Contributing to taskflow
 
-Thanks for your interest. `pi-taskflow` is a fast-moving project maintained primarily by [@heggria](https://github.com/heggria). Contributions are welcome — here's how.
+Thanks for your interest. `taskflow` is a fast-moving project maintained primarily by [@heggria](https://github.com/heggria). Contributions are welcome — here's how.
 
 ## Quick start
 
 ```bash
-git clone git@github.com:heggria/pi-taskflow.git
-cd pi-taskflow
+git clone git@github.com:heggria/taskflow.git
+cd taskflow
 npm install
 npm run typecheck   # TypeScript checks (no build needed)
 npm test            # 872 tests, all passing
@@ -35,7 +35,7 @@ I review issues and PRs ~weekly. If you need a faster turnaround, mention why in
 
 ## Architecture
 
-See [`AGENTS.md`](./AGENTS.md) for the full layout and conventions. `pi-taskflow` is an npm-workspaces monorepo of three published packages:
+See [`AGENTS.md`](./AGENTS.md) for the full layout and conventions. `taskflow` is an npm-workspaces monorepo of three published packages:
 
 | Package / directory | What |
 |---------------------|------|

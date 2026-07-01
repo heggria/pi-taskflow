@@ -1,0 +1,6 @@
+interface:
+  display_name: "Taskflow"
+  short_description: "Declarative multi-phase subagent workflows"
+  icon_small: "./assets/taskflow-small.svg"
+  icon_large: "./assets/taskflow.svg"
+  default_prompt: "Use $taskflow to orchestrate multi-phase subagent work: discover the items, work them in parallel, cross-check with a gate, and report — running only the final result back into context."

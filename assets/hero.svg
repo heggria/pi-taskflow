@@ -1,4 +1,4 @@
-<svg width="1280" height="660" viewBox="0 0 1280 660" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="pi-taskflow — a declarative DAG of subagents: one source fans out, branches route conditionally, a gate guards quality, and only the final result returns to your context. 9 phase types, zero deps, 535 tests.">
+<svg width="1280" height="660" viewBox="0 0 1280 660" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="taskflow — a declarative DAG of subagents: one source fans out, branches route conditionally, a gate guards quality, and only the final result returns to your context. 9 phase types, zero deps, runs on Pi and Codex.">
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1280" y2="660" gradientUnits="userSpaceOnUse">
       <stop offset="0" stop-color="#0A0E18"/>
@@ -36,9 +36,9 @@
   <!-- ============ TITLE ============ -->
   <rect x="487" y="40" width="306" height="34" rx="17" fill="#0F1526" stroke="#2C3A60"/>
   <circle cx="512" cy="57" r="4.5" fill="#43D9AD"/>
-  <text x="530" y="62" font-family="ui-monospace,'SF Mono',Menlo,monospace" font-size="13.5" letter-spacing="1.2" fill="#9DA9C9">pi install npm:pi-taskflow</text>
+  <text x="530" y="62" font-family="ui-monospace,'SF Mono',Menlo,monospace" font-size="13.5" letter-spacing="1.2" fill="#9DA9C9">Pi · Codex · zero deps</text>
 
-  <text x="640" y="166" text-anchor="middle" font-family="ui-monospace,'SF Mono','JetBrains Mono',Menlo,monospace" font-size="84" font-weight="700" letter-spacing="-2" fill="url(#ti)">pi-taskflow</text>
+  <text x="640" y="166" text-anchor="middle" font-family="ui-monospace,'SF Mono','JetBrains Mono',Menlo,monospace" font-size="84" font-weight="700" letter-spacing="-2" fill="url(#ti)">taskflow</text>
   <text x="640" y="206" text-anchor="middle" font-family="system-ui,'Segoe UI',Helvetica,Arial,sans-serif" font-size="21" font-weight="500" fill="#C6CFE8">One declarative graph. Nine kinds of phase. Only the result returns.</text>
 
   <!-- ============ RUNTIME BOUNDARY (holds the whole DAG) ============ -->
