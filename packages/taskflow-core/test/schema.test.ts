@@ -413,3 +413,25 @@ test("validateTaskflow: non-array array-fields error instead of throwing", () =>
 		);
 	}
 });
+
+test("validateTaskflow: non-string scalar fields error instead of throwing", () => {
+	// task/agent/use/when/until flow into the renderers (.replace/.includes); a
+	// non-string must be a structured error, not a TypeError, and must not pass.
+	for (const key of ["task", "agent", "use", "when", "until"]) {
+		const phase: Record<string, unknown> = { id: "a", type: "agent", task: "t", [key]: 1 };
+		let r: ReturnType<typeof validateTaskflow>;
+		assert.doesNotThrow(() => {
+			r = validateTaskflow({ name: "x", phases: [phase] });
+		}, `${key} non-string must not throw`);
+		r = validateTaskflow({ name: "x", phases: [phase] });
+		assert.equal(r.ok, false, `${key} non-string is invalid`);
+	}
+});
+
+test("validateTaskflow: non-string id / null phase don't throw", () => {
+	assert.doesNotThrow(() => validateTaskflow({ name: "x", phases: [{ id: 1, type: "agent", task: "t" }] }));
+	assert.doesNotThrow(() => validateTaskflow({ name: "x", phases: [null] }));
+	assert.doesNotThrow(() => validateTaskflow({ name: "x", phases: ["nope"] }));
+	const r = validateTaskflow({ name: "x", phases: [null] });
+	assert.equal(r.ok, false, "a null phase is invalid");
+});

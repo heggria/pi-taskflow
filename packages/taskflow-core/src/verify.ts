@@ -366,15 +366,20 @@ function detectGuardContradictions(phases: Phase[]): VerificationIssue[] {
  * This is a pure function — no I/O, no LLM, zero tokens.
  */
 export function verifyTaskflow(flow: VerifiableFlow): VerificationResult {
-	const phases = flow.phases;
+	// Tolerate malformed phase lists: null/non-object elements (validateTaskflow
+	// reports them) would otherwise crash the graph helpers on `p.id`. Filter to
+	// well-formed phase objects so verification degrades gracefully.
+	const phases = asArray<Phase>(flow.phases).filter((p): p is Phase => !!p && typeof p === "object");
+	// Detectors that take the whole flow must see the sanitized phase list too.
+	const safeFlow = { ...flow, phases };
 	const succ = successors(phases);
 	const issues: VerificationIssue[] = [];
 
 	issues.push(...detectDeadEnds(phases, succ));
 	issues.push(...detectUnreachable(phases, succ));
 	issues.push(...detectGateExhaustion(phases, succ));
-	issues.push(...detectBudgetOverflow(flow));
-	issues.push(...detectConcurrencyWarnings(flow, succ));
+	issues.push(...detectBudgetOverflow(safeFlow));
+	issues.push(...detectConcurrencyWarnings(safeFlow, succ));
 	issues.push(...detectGuardContradictions(phases));
 
 	const ok = !issues.some((i) => i.severity === "error");

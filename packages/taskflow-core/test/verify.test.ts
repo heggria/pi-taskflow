@@ -76,6 +76,14 @@ test("verify: reduce `from` keeps upstream connected in a 3-phase chain", () => 
 	assert.equal(dead.length, 0, "no dead-ends: scan->sum->ship all feed forward");
 });
 
+test("verify: tolerates null / non-object phase elements without throwing", () => {
+	// A malformed phase list (validateTaskflow reports it) must degrade gracefully
+	// — every detector, incl. the flow-taking ones (concurrency/budget), sees the
+	// sanitized phase list, not raw nulls.
+	assert.doesNotThrow(() => verifyTaskflow(vf([null as unknown as Phase])));
+	assert.doesNotThrow(() => verifyTaskflow(vf(["nope" as unknown as Phase, agent("a", undefined, { final: true })])));
+});
+
 // ---------------------------------------------------------------------------
 // Unreachable detection
 // ---------------------------------------------------------------------------

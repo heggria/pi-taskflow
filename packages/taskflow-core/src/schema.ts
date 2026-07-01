@@ -544,6 +544,15 @@ export function validateTaskflow(def: unknown, opts: ValidationOptions = {}): Va
 				errors.push(`Phase '${p.id}': '${key}' must be an array, got ${typeof v}`);
 			}
 		}
+		// String-shaped fields must be strings when present. They flow into the
+		// diagram/outline renderers (label/summarize), which call `.replace` and
+		// would otherwise throw on a number/object. Report a structured error.
+		for (const key of ["task", "agent", "use", "when", "until"] as const) {
+			const v = (p as Record<string, unknown>)[key];
+			if (v !== undefined && typeof v !== "string") {
+				errors.push(`Phase '${p.id}': '${key}' must be a string, got ${typeof v}`);
+			}
+		}
 
 		// When a phase opts into the Shared Context Tree, its id becomes a filesystem
 		// node id; restrict the charset so two ids can't sanitize to the same node
@@ -665,7 +674,7 @@ export function validateTaskflow(def: unknown, opts: ValidationOptions = {}): Va
 		}
 
 		// Phase id convention: hyphens only (consistent with interpolation placeholders like {steps.audit-each.output})
-		if (p.id && p.id.includes("_")) {
+		if (typeof p.id === "string" && p.id.includes("_")) {
 			errors.push(`Phase '${p.id}': id uses underscores — use hyphens for consistency with interpolation placeholders (e.g. {steps.audit-each.output})`);
 		}
 	}
@@ -685,7 +694,7 @@ export function validateTaskflow(def: unknown, opts: ValidationOptions = {}): Va
 	const VALID_AGENT_RE = /^[a-z][a-z0-9-]*$/;
 	for (const p of flow.phases) {
 		if (!p?.id) continue;
-		if (p.agent && !p.agent.includes("_") && !VALID_AGENT_RE.test(p.agent)) {
+		if (typeof p.agent === "string" && !p.agent.includes("_") && !VALID_AGENT_RE.test(p.agent)) {
 			errors.push(`Phase '${p.id}': agent '${p.agent}' has invalid name format (expected lowercase alphanumeric with hyphens)`);
 		}
 	}

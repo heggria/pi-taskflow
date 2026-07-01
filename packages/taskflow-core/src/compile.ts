@@ -108,9 +108,12 @@ function label(text: string): string {
 }
 
 /** Truncate a task prompt to a single readable line for the node body. */
-function summarize(text: string | undefined, max = 48): string {
-	if (!text) return "";
-	const firstLine = text.replace(/\s+/g, " ").trim();
+function summarize(text: unknown, max = 48): string {
+	// Defensive: a malformed non-string field (validateTaskflow reports it) must
+	// not crash the renderer via `.replace`.
+	if (text == null || text === "") return "";
+	const s = typeof text === "string" ? text : String(text);
+	const firstLine = s.replace(/\s+/g, " ").trim();
 	return firstLine.length > max ? `${firstLine.slice(0, max - 1)}…` : firstLine;
 }
 
