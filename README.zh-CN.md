@@ -8,7 +8,7 @@
   <a href="./LICENSE"><img src="https://img.shields.io/badge/license-MIT-43D9AD?style=flat-square" alt="MIT license"></a>
   <a href="#whats-inside"><img src="https://img.shields.io/badge/runtime%20deps-0-43D9AD?style=flat-square" alt="zero runtime dependencies"></a>
   <a href="https://github.com/heggria/taskflow/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/heggria/taskflow/ci.yml?branch=main&style=flat-square&label=CI" alt="CI status"></a>
-  <a href="#whats-inside"><img src="https://img.shields.io/badge/tests-872-6E8BFF?style=flat-square" alt="872 tests"></a>
+  <a href="#whats-inside"><img src="https://img.shields.io/badge/tests-884-6E8BFF?style=flat-square" alt="884 tests"></a>
   <a href="#whats-inside"><img src="https://img.shields.io/badge/dogfooded-%E2%9C%93-43D9AD?style=flat-square" alt="dogfooded"></a>
   <a href="#run-it-on-your-agent"><img src="https://img.shields.io/badge/runs%20on-Pi%20%2B%20Codex-B692FF?style=flat-square" alt="runs on Pi and Codex"></a>
 </p>
@@ -631,12 +631,12 @@ provided files. Report violations grouped by file. No fixes.
 
 <div align="center">
 
-**0 个运行时依赖** · **872 个测试** · **9 种阶段类型** · **共享上下文树** · **跨会话恢复** · **跨运行记忆化** · **逐项 map 缓存** · **增量重算** · **后台（detached）执行** · **`compile` Mermaid 渲染** · **~9k LOC 运行时**
+**0 个运行时依赖** · **884 个测试** · **9 种阶段类型** · **共享上下文树** · **跨会话恢复** · **跨运行记忆化** · **逐项 map 缓存** · **增量重算** · **后台（detached）执行** · **`compile` Mermaid 渲染** · **~9k LOC 运行时**
 
 </div>
 
 - **零运行时依赖。** 没有 `dependencies` 字段——运行时完全基于 Node 内置模块（`fs` / `path` / `os` / `child_process` / `crypto`）。文件锁是 `fs.openSync("wx")`，不是第三方库。
-- **872 个测试分布在 51 个测试文件中**，涵盖并发、原子文件锁定（8 进程竞争回归测试）、路径穿越防御、跨会话恢复、跨运行缓存新鲜度（流程/推理/工具键隔离、指纹失效、TTL/LRU 淘汰）、逐项 map 缓存、增量重算、FlowIR 编译接缝、门控判决、预算上限、重试/回退、审批流程、循环终止、锦标赛评判、子流程组合、共享上下文树、工作区隔离、后台执行、回调隔离、空闲看门狗、模型角色 init 配置，以及 `compile` Mermaid 渲染器。
+- **884 个测试分布在 51 个测试文件中**，涵盖并发、原子文件锁定（8 进程竞争回归测试）、路径穿越防御、跨会话恢复、跨运行缓存新鲜度（流程/推理/工具键隔离、指纹失效、TTL/LRU 淘汰）、逐项 map 缓存、增量重算、FlowIR 编译接缝、门控判决、预算上限、重试/回退、审批流程、循环终止、锦标赛评判、子流程组合、共享上下文树、工作区隔离、后台执行、回调隔离、空闲看门狗、模型角色 init 配置，以及 `compile` Mermaid 渲染器。
 - **经过强化的设计。** 路径穿越防御（词法 + `realpath`）、runId 验证、HTML/错误净化、原子写入、通过 `rename` 实现的过期锁窃取，以及杀死卡死子代理的空闲看门狗。
 - **自产自用（dogfooded）。** 每个新功能必须在发布前通过项目自身的 `self-improve` taskflow 的考验。
 
@@ -667,7 +667,7 @@ provided files. Report violations grouped by file. No fixes.
 - **共享上下文需显式开启。** 除非阶段设置 `shareContext`（或流程设置 `contextSharing`），子代理不共享任何内容。黑板为每次运行独立、基于文件、大小受限，并随运行清理。派生嵌套上限为 `MAX_DYNAMIC_NESTING`（5）。
 - **工作区隔离是 fail-open 的。** `cwd: "worktree"` 要求基底 cwd 是一个 git 工作树；否则降级为 `temp` 目录（带警告）。保留关键字仅在作者编写的流程中生效。
 - **无 `output: "file"`。** 输出只能是文本/JSON——通过代理的 `write` 工具调用写入文件。
-- **`map` 需要一个 JSON 数组。** `over` 字段必须解析为 `{steps.ID.json}` 数组。先用一个单代理 `output: "json"` 阶段包装文本列表。
+- **`map` 基于一个字符串 `over` 展开出 JSON 数组。** `over` 字段是一个字符串，它要么插值解析为 JSON 数组（例如 `{steps.ID.json}`），要么本身就是一个 JSON 数组字符串。先用一个单代理 `output: "json"` 阶段包装纯文本列表，或对固定列表传入 `JSON.stringify([...])`。（直接写字面量数组会被拒绝——请从某个阶段产出它并引用之。）
 - **DAG 必须是无环的。** 循环会在验证时被拒绝。
 - **跨运行缓存不包含 `gate`、`approval`、`loop` 和 `tournament`。** 这些阶段每次运行必须产生新结果。
 - **审批在后台模式下自动拒绝。** 这是一项安全不变量——审批门控绝不会被静默绕过。

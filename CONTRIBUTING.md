@@ -12,7 +12,7 @@ npm run typecheck   # TypeScript checks (no build needed)
 npm test            # 872 tests, all passing
 ```
 
-> The pi end-to-end suites (`packages/pi-taskflow/test/e2e*.mts`) spawn live Pi subagents and are run directly with `node --conditions=development --experimental-strip-types <file>`. They need `pi` installed and model access configured. CI runs unit tests only.
+> The pi end-to-end suites (`packages/pi-taskflow/test/e2e*.mts`) spawn live Pi subagents and are run directly with `node --conditions=development --experimental-strip-types <file>`. They need `pi` installed and model access configured. CI runs the unit tests plus the network-free Codex MCP e2e suites (the live-model e2e stays manual).
 
 ## What makes a good contribution
 
