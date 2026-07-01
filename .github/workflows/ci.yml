@@ -64,8 +64,14 @@ jobs:
       # The codex MCP e2e spawns the real bin over stdio and drives the full
       # handshake + tool calls — no live model / no network. The other e2e
       # (test:e2e-codex) needs a live codex session, so it stays manual.
-      - name: Codex MCP e2e
+      - name: Codex MCP e2e (stdio handshake + tool calls)
         run: npm run test:e2e-codex-mcp
+
+      # Comprehensive rendering/validation E2E against the built dist bin:
+      # malformed-input safety, false-pass guards, SVG injection escaping.
+      # rsvg rasterization is optional (auto-skipped when absent).
+      - name: Codex MCP e2e (comprehensive rendering)
+        run: npm run test:e2e-codex-mcp-full
 
   build:
     name: build (dist emit)

@@ -7,7 +7,7 @@
  */
 
 import type { Phase } from "./schema.ts";
-import { LOOP_DEFAULT_MAX_ITERATIONS } from "./schema.ts";
+import { dependenciesOf, LOOP_DEFAULT_MAX_ITERATIONS } from "./schema.ts";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -51,7 +51,10 @@ function successors(phases: Phase[]): Map<string, string[]> {
 	const m = new Map<string, string[]>();
 	for (const p of phases) m.set(p.id, []);
 	for (const p of phases) {
-		for (const d of p.dependsOn ?? []) {
+		// dependenciesOf = dependsOn ∪ from, matching runtime + topo-sort. A reduce
+		// phase's `from` edges are real edges, so an upstream phase feeding only a
+		// reduce is NOT terminal.
+		for (const d of dependenciesOf(p)) {
 			const s = m.get(d);
 			if (s) s.push(p.id);
 		}
@@ -73,14 +76,14 @@ function descendants(phaseId: string, succ: Map<string, string[]>): Set<string> 
 
 /** Phases with NO `dependsOn` — the DAG entry points. */
 function entryPhases(phases: Phase[]): Phase[] {
-	return phases.filter((p) => !p.dependsOn || p.dependsOn.length === 0);
+	return phases.filter((p) => dependenciesOf(p).length === 0);
 }
 
 /** Phases with NO dependents (no one waits for them). */
 function terminalPhases(phases: Phase[], succ: Map<string, string[]>): string[] {
 	const hasDependents = new Set<string>();
 	for (const p of phases) {
-		for (const d of p.dependsOn ?? []) hasDependents.add(d);
+		for (const d of dependenciesOf(p)) hasDependents.add(d);
 	}
 	return phases.filter((p) => !hasDependents.has(p.id)).map((p) => p.id);
 }

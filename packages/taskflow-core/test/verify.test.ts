@@ -45,6 +45,21 @@ test("verify: dead-end — explicit final suppresses warning", () => {
 	assert.equal(dead[0].phaseId, "b");
 });
 
+test("verify: reduce `from` counts as a real edge — upstream isn't terminal", () => {
+	// `sum` depends on `scan` only via reduce `from` (not dependsOn). Graph helpers
+	// must treat `from` as an edge (dependenciesOf = dependsOn ∪ from), or `scan`
+	// is falsely flagged as a terminal dead-end.
+	const flow = vf([
+		agent("scan"),
+		{ id: "sum", type: "reduce", from: ["scan"], task: "summarize", final: true } as Phase,
+	]);
+	const r = verifyTaskflow(flow);
+	const dead = r.issues.filter((i) => i.category === "dead-end");
+	assert.equal(dead.length, 0, "scan feeds the reduce, so it is not a dead-end");
+	const unreachable = r.issues.filter((i) => i.category === "unreachable");
+	assert.equal(unreachable.length, 0, "sum is reachable via its `from` edge");
+});
+
 // ---------------------------------------------------------------------------
 // Unreachable detection
 // ---------------------------------------------------------------------------
