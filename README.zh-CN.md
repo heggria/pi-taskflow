@@ -135,7 +135,7 @@ Pi 生态现在有 **20 多个委托、工作流和编排扩展**——每个在
 - **`@pi-agents/orchid`** 是生态中功能最完整的编排器（DAG + worktree + Ralph 循环 + 代理邮箱）——但其 DSL 是*固定*的 9 阶段流水线，携带运行时依赖 + jiti，且处于 beta 阶段。当你想**定义自己的图结构**（而非采用别人的固定观点），并且追求**零依赖**和一条命令安装时，选 `taskflow`。
 - **`pi-crew` / `ultimate-pi`** 更重——worktree 隔离、持久的异步团队、多层治理。如果你想要轻量、声明式、零依赖，那就选本项目。
 - **`@zhushanwen/pi-workflow`** 精神上最为接近，也是零依赖，但它站在上述分水岭的**命令式**那一边：你要以模型书写并运行的 **JavaScript 脚本**来编写工作流。`taskflow` 的**声明式 JSON DAG** 是可验证的那一边——可静态检查、可可视化、可安全交给 LLM 生成，且恢复粒度精细到阶段级别而非调用缓存去重。
-- **`@fiale-plus/pi-rogue-orchestration`** 拥有真正的**循环至完成**（`taskflow` 尚不具备的功能）。如果你的任务是"一直做直到目标达成"，它值得一看；而 `taskflow` 适用于*结构化、分支式的*流水线。
+- **`@fiale-plus/pi-rogue-orchestration`** 拥有真正的**循环至完成**（目标驱动的迭代）。`taskflow` 现在也自带 `loop` 阶段（v0.0.13+）加上竞争选择的 `tournament`——而且与 rogue-orchestration 不同，`taskflow` 拥有带门控、可组合子流程和跨会话恢复的完整 DAG。若只需极少结构的“一直做直到目标达成”，rogue-orchestration 更轻；若需结构化、分支式的流水线，`taskflow` 覆盖同样的能力且更多。
 - **`pi-subagents` / `@gotgenes/pi-subagents`** 是即席"用 reviewer 审查这个 diff"委托和后台作业的成熟选择。`taskflow` 则适用于当这些委托需要变成*可重复、可恢复的流水线*时。
 - **`pi-pipeline` / `pi-agent-flow`** 提供的是*固定观点、固定结构*的流程。`taskflow` 提供的是*一张空白画布*：你（或模型）声明适合任务的图结构。
 
@@ -433,6 +433,7 @@ Review the audit below. If any endpoint is missing auth, end with
 | `/tf list` | 列出所有已保存的流程 |
 | `/tf run <name> [args]` | 运行已保存的流程（例如 `/tf run summarize-files dir=src`） |
 | `/tf show <name>` | 打印流程的定义 |
+| `/tf compile <name> [lr\|td]` | **将流程渲染为 Mermaid 图 + 验证报告** —— 0 token、无 LLM；可粘贴到 README/issue/PR |
 | `/tf runs` | 浏览近期运行历史（交互式 TUI） |
 | `/tf resume <runId>` | 继续一个暂停/失败的运行——已缓存的阶段自动跳过 |
 | `/tf init` | **交互式映射模型角色**到你的已启用模型（写入 `~/.pi/agent/settings.json`） |
