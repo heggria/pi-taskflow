@@ -37,7 +37,7 @@ codex plugin add taskflow@taskflow
 
 **A `workflow` flows. A `taskflow` is a *graph*.** Other orchestrators let the model *script* the work — imperative code that flows step by step, with the graph hidden inside control flow. `taskflow` does the opposite: you **declare** the work as a graph of discrete, named **task** nodes connected by `dependsOn` edges — and the runtime *verifies that graph before it spends a single token.*
 
-You already know your agent's built-in subagent shorthand — `task` / `tasks` / `chain`. `taskflow` speaks the *same* shorthand — so your existing delegations instantly become **tracked, resumable, and saveable as a one-word `/tf:<name>` command**. When you outgrow the shorthand, the full DSL gives you a real DAG: dynamic fan-out over dozens of items, conditional routing, quality gates, human approvals, retries, loops, tournaments, and a hard spend ceiling.
+You already know your agent's built-in subagent shorthand — `task` / `tasks` / `chain`. `taskflow` speaks the *same* shorthand — so your existing delegations instantly become **tracked, resumable, and saveable by name** (on Pi, a saved flow becomes a one-word `/tf:<name>` command; on Codex you run it by name through `taskflow_run`). When you outgrow the shorthand, the full DSL gives you a real DAG: dynamic fan-out over dozens of items, conditional routing, quality gates, human approvals, retries, loops, tournaments, and a hard spend ceiling.
 
 And the whole time, **only the final phase reaches your conversation.** Every intermediate transcript stays in the runtime, never your context window.
 
@@ -100,14 +100,16 @@ The closest thing to `taskflow` in spirit is the **dynamic / code-mode workflow*
 | **Verify before running** | ✗ Turing-complete; can't prove it terminates | **✓ static checks: no cycles, dead-ends, budget overflow, dangling refs** |
 | **See it** | ✗ the graph only exists as the code runs | **✓ the live progress render *is* the DAG** |
 | **Resume** | coarse (call-cache dedup) | **✓ phase-by-phase input-hash resume, cross-session** |
-| **Safe to LLM-generate** | risky — it's executable code | **✓ it's just data — no `eval`; and a runtime-generated sub-flow is *structurally validated* (cycles / dangling refs / duplicate ids) before it runs** |
+| **Safe to LLM-generate** | risky — it's executable code | **✓ it's just data — no JavaScript `eval`; and a runtime-generated sub-flow is *structurally validated* (cycles / dangling refs / duplicate ids) before it runs** |
 | **Expressivity ceiling** | **higher** — arbitrary control flow | bounded by the DSL, but `map`/`when`/`loop`/`gate`/`tournament` — plus **runtime-generated sub-flows (`flow {def}`)** for plan-then-execute and iterative replanning — cover most jobs |
 
 We chose the **verifiable** side on purpose. The expressivity you give up is real; what you get back — a plan you can check, watch, replay, and safely let a model author — is what turns one-off prompting into durable orchestration.
 
 ## Compared to other Pi extensions
 
-The Pi ecosystem now has **20+ delegation, workflow, and orchestration extensions** — each great at what it's for. Here's an honest map of where `taskflow` sits (verified against each package's latest npm release, June 2026). For the full breakdown — every package, strengths *and* weaknesses — see [`docs/internal/PI-ECOSYSTEM.md`](./docs/internal/PI-ECOSYSTEM.md). For the broader, non-Pi landscape (LangGraph, Temporal, CrewAI, Mastra…) see [`docs/internal/COMPETITORS.md`](./docs/internal/COMPETITORS.md).
+> This section is **Pi-specific** — it maps `pi-taskflow` against other packages in the Pi ecosystem. If you're on Codex, skip to [Phase types](#phase-types); the engine and DSL are identical.
+
+The Pi ecosystem now has **20+ delegation, workflow, and orchestration extensions** — each great at what it's for. Here's an honest map of where `pi-taskflow` sits (verified against each package's latest npm release, June 2026). For the full breakdown — every package, strengths *and* weaknesses — see [`docs/internal/PI-ECOSYSTEM.md`](./docs/internal/PI-ECOSYSTEM.md). For the broader, non-Pi landscape (LangGraph, Temporal, CrewAI, Mastra…) see [`docs/internal/COMPETITORS.md`](./docs/internal/COMPETITORS.md).
 
 | Extension | Model | Custom DSL | DAG | Dynamic fan-out | Cross-session resume | Quality gate | Human approval | Save as command | Zero deps |
 |---|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
@@ -133,7 +135,7 @@ The Pi ecosystem now has **20+ delegation, workflow, and orchestration extension
 - **`pi-subagents` / `@gotgenes/pi-subagents`** are the mature picks for ad-hoc "use reviewer on this diff" delegation and background jobs. `taskflow` is for when those delegations need to become a *repeatable, resumable pipeline*.
 - **`pi-pipeline` / `pi-agent-flow`** ship *opinionated, fixed* flows. `taskflow` ships an *empty canvas*: you (or the model) declare the graph that fits the job.
 
-> The honest one-liner: **`taskflow` is the only Pi extension that gives you a *declarative, verifiable, resumable* DAG of task nodes — saved as a one-word command, with zero runtime dependencies and context isolation by design** (and the same engine runs on Codex via MCP). Where code-mode workflows let the model *script* the work, `taskflow` lets it *declare a graph the runtime can prove correct before running.* Recently shipped from the roadmap: the Shared Context Tree (blackboard + supervision) and worktree isolation (see [`docs/internal/STRATEGY.md`](./docs/internal/STRATEGY.md)).
+> The honest one-liner: **`pi-taskflow` is the only Pi extension that gives you a *declarative, verifiable, resumable* DAG of task nodes — saved as a one-word `/tf:<name>` command, with zero runtime dependencies and context isolation by design** (and the same engine runs on Codex via the `taskflow_*` MCP tools). Where code-mode workflows let the model *script* the work, `taskflow` lets it *declare a graph the runtime can prove correct before running.* Recently shipped from the roadmap: the Shared Context Tree (blackboard + supervision) and worktree isolation (see [`docs/internal/STRATEGY.md`](./docs/internal/STRATEGY.md)).
 
 ## 30-second start
 
@@ -204,7 +206,7 @@ Shorthand modes also support per-step **context pre-reading** — pass `context`
 
 ## Watch it run
 
-This is not a mockup. **This is stdout from a real run** — the `self-improve` flow that writes and verifies its own test suites, caught mid-flight by a quality gate:
+This is not a mockup. **This is stdout from a real run** (the Pi TUI) — the `self-improve` flow that writes and verifies its own test suites, caught mid-flight by a quality gate:
 
 ```
 ⊗ taskflow self-improve  6/7 · blocked · $0.095
@@ -286,7 +288,7 @@ The intermediate summaries never enter your context. The runtime owns them; you 
 - **`retry`** re-runs a flaky patch with backoff; **`budget`** halts the whole run if it gets too expensive.
 - **`approval`** pauses for a human (approve / reject / edit) before the final `ship`.
 
-No scripting. No `eval`. Just data the runtime executes — safe enough to run LLM-generated definitions directly.
+No scripting. No JavaScript `eval`. Just data the runtime executes — safe enough to run LLM-generated definitions directly.
 
 ### Loop until done
 
@@ -521,7 +523,7 @@ Condition grammar (for `when`): `== != < > <= >=`, `&& || !`, parentheses, quote
 
 ## Commands
 
-Saved flows become CLI shortcuts. All commands run in the Pi session:
+Saved flows become CLI shortcuts. **These `/tf` commands are Pi-only** (they run in the Pi session). On Codex, use the `taskflow_*` MCP tools instead — `taskflow_list` / `taskflow_show` / `taskflow_run` (by `name`) / `taskflow_verify` / `taskflow_compile`.
 
 | Command | What it does |
 |---|---|
@@ -534,7 +536,7 @@ Saved flows become CLI shortcuts. All commands run in the Pi session:
 | `/tf init` | **Interactively map model roles** to your enabled models (writes `~/.pi/agent/settings.json`) |
 | `/tf:<name> [args]` | Shortcut — runs the flow in one tap |
 
-Tool actions (used by the model): `run` (inline `define` or saved `name`), `save`, `resume`, `list`, `agents`, `init`, `verify`, `compile`, `cache-clear`.
+Tool actions (used by the model on Pi): `run` (inline `define` or saved `name`), `save`, `resume`, `list`, `agents`, `init`, `verify`, `compile`, `ir`, `provenance`, `why-stale`, `recompute`, `cache-clear`. On Codex the exposed MCP tools are `taskflow_run` / `taskflow_list` / `taskflow_show` / `taskflow_verify` / `taskflow_compile`.
 
 ## Background (detached) execution
 
@@ -761,7 +763,7 @@ Copy one into `.pi/taskflows/<name>.json` (or `~/.pi/agent/taskflows/`) and it r
 
 Every feature in `taskflow` ships **through `taskflow`.**
 
-Our `self-improve` flow is a 10-phase DAG — it audits the codebase, patches defects, verifies correctness, gates on quality, and surfaces the report — all declaratively. It's saved as `/tf:self-improve` and run before every release. No other agent orchestrator in the Pi ecosystem builds itself with itself.
+Our `self-improve` flow is a 10-phase DAG — it audits the codebase, patches defects, verifies correctness, gates on quality, and surfaces the report — all declaratively. We run it (as a user-scope `/tf:self-improve` flow) before releases. No other agent orchestrator in the Pi ecosystem builds itself with itself.
 
 | Campaign | Scale | Phases | Outcome |
 |----------|-------|--------|---------|
@@ -778,7 +780,7 @@ Our `self-improve` flow is a 10-phase DAG — it audits the codebase, patches de
 
 ## Status & limits
 
-**v0.1.1** — fixed issue #3: detached (background) and foreground runs now actually execute their phases (the subagent runner injection lost in the monorepo split is restored, plus a detached-runner module-resolution fix and a crash guard so a dying child no longer leaves a run stuck at `running`). See [CHANGELOG](./CHANGELOG.md). Baseline of this release: **multi-host monorepo** — the engine is split into the host-neutral `taskflow-core` plus `taskflow` (Pi adapter) and `codex-taskflow` (Codex runner + MCP server). **Shared Context Tree**: opt-in (`shareContext` / `contextSharing`) blackboard + supervision tools (`ctx_read`/`ctx_write` horizontal reuse, `ctx_report`/`ctx_spawn` vertical supervision); `ctx_spawn` accepts a flat task **or** a dependency-bearing `subflow` (a runtime-validated nested DAG), depth-capped on a unified nesting counter with budget accounting. **Workspace isolation**: a phase's `cwd` accepts reserved keywords `temp`/`dedicated`/`worktree` — the runtime allocates an isolated dir (or a git worktree on a throwaway branch) and tears it down after the phase, fail-open, rejected in LLM-authored sub-flows. **Detached execution**: runs can execute in the background, detached from the Pi session. Prior: loop-until-done (`loop`), tournament (best-of-N with a judge), cross-run memoization (content-addressed cache with git/file/glob/env fingerprints and TTL), interactive `/tf init`, configurable built-in agents, 18 built-in agents with 6 model roles. Full control-flow & reliability layer (`when` guards, `join: any`, `retry`/backoff, `approval`, `flow` composition, `budget` caps, `onBlock: "retry"`, `eval` machine gates, idle watchdog) on top of the DSL + DAG runtime (`agent`/`parallel`/`map`/`gate`/`reduce`). Inline + saved flows, cross-session resume, live progress, and isolated context. A run executes as one streaming tool call.
+**v0.1.2** — the current release. See [CHANGELOG](./CHANGELOG.md) for the full history (incl. the v0.1.1 execution fix for issue #3). Baseline: **multi-host monorepo** — the engine is split into the host-neutral `taskflow-core` plus `pi-taskflow` (Pi adapter) and `codex-taskflow` (Codex runner + MCP server + plug-and-play Codex plugin). **Shared Context Tree**: opt-in (`shareContext` / `contextSharing`) blackboard + supervision tools (`ctx_read`/`ctx_write` horizontal reuse, `ctx_report`/`ctx_spawn` vertical supervision); `ctx_spawn` accepts a flat task **or** a dependency-bearing `subflow` (a runtime-validated nested DAG), depth-capped on a unified nesting counter with budget accounting. **Workspace isolation**: a phase's `cwd` accepts reserved keywords `temp`/`dedicated`/`worktree` — the runtime allocates an isolated dir (or a git worktree on a throwaway branch) and tears it down after the phase, fail-open, rejected in LLM-authored sub-flows. **Detached execution**: runs can execute in the background, detached from the Pi session. Prior: loop-until-done (`loop`), tournament (best-of-N with a judge), cross-run memoization (content-addressed cache with git/file/glob/env fingerprints and TTL), interactive `/tf init`, configurable built-in agents, 18 built-in agents with 6 model roles. Full control-flow & reliability layer (`when` guards, `join: any`, `retry`/backoff, `approval`, `flow` composition, `budget` caps, `onBlock: "retry"`, `eval` machine gates, idle watchdog) on top of the DSL + DAG runtime (`agent`/`parallel`/`map`/`gate`/`reduce`). Inline + saved flows, cross-session resume, live progress, and isolated context. A run executes as one streaming tool call.
 
 Known boundaries (tracked, bounded — no surprises mid-flow):
 
