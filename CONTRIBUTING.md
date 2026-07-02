@@ -1,18 +1,18 @@
-# Contributing to pi-taskflow
+# Contributing to taskflow
 
-Thanks for your interest. `pi-taskflow` is a fast-moving project maintained primarily by [@heggria](https://github.com/heggria). Contributions are welcome — here's how.
+Thanks for your interest. `taskflow` is a fast-moving project maintained primarily by [@heggria](https://github.com/heggria). Contributions are welcome — here's how.
 
 ## Quick start
 
 ```bash
-git clone git@github.com:heggria/pi-taskflow.git
-cd pi-taskflow
+git clone git@github.com:heggria/taskflow.git
+cd taskflow
 npm install
 npm run typecheck   # TypeScript checks (no build needed)
 npm test            # 872 tests, all passing
 ```
 
-> The pi end-to-end suites (`packages/pi-taskflow/test/e2e*.mts`) spawn live Pi subagents and are run directly with `node --conditions=development --experimental-strip-types <file>`. They need `pi` installed and model access configured. CI runs unit tests only.
+> The pi end-to-end suites (`packages/pi-taskflow/test/e2e*.mts`) spawn live Pi subagents and are run directly with `node --conditions=development --experimental-strip-types <file>`. They need `pi` installed and model access configured. CI runs the unit tests plus the network-free Codex MCP e2e suites (the live-model e2e stays manual).
 
 ## What makes a good contribution
 
@@ -35,7 +35,7 @@ I review issues and PRs ~weekly. If you need a faster turnaround, mention why in
 
 ## Architecture
 
-See [`AGENTS.md`](./AGENTS.md) for the full layout and conventions. `pi-taskflow` is an npm-workspaces monorepo of three published packages:
+See [`AGENTS.md`](./AGENTS.md) for the full layout and conventions. `taskflow` is an npm-workspaces monorepo of three published packages:
 
 | Package / directory | What |
 |---------------------|------|

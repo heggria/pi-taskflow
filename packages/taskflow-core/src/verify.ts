@@ -7,7 +7,7 @@
  */
 
 import type { Phase } from "./schema.ts";
-import { LOOP_DEFAULT_MAX_ITERATIONS } from "./schema.ts";
+import { asArray, dependenciesOf, LOOP_DEFAULT_MAX_ITERATIONS } from "./schema.ts";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -51,7 +51,10 @@ function successors(phases: Phase[]): Map<string, string[]> {
 	const m = new Map<string, string[]>();
 	for (const p of phases) m.set(p.id, []);
 	for (const p of phases) {
-		for (const d of p.dependsOn ?? []) {
+		// dependenciesOf = dependsOn ∪ from, matching runtime + topo-sort. A reduce
+		// phase's `from` edges are real edges, so an upstream phase feeding only a
+		// reduce is NOT terminal.
+		for (const d of dependenciesOf(p)) {
 			const s = m.get(d);
 			if (s) s.push(p.id);
 		}
@@ -73,14 +76,14 @@ function descendants(phaseId: string, succ: Map<string, string[]>): Set<string> 
 
 /** Phases with NO `dependsOn` — the DAG entry points. */
 function entryPhases(phases: Phase[]): Phase[] {
-	return phases.filter((p) => !p.dependsOn || p.dependsOn.length === 0);
+	return phases.filter((p) => dependenciesOf(p).length === 0);
 }
 
 /** Phases with NO dependents (no one waits for them). */
 function terminalPhases(phases: Phase[], succ: Map<string, string[]>): string[] {
 	const hasDependents = new Set<string>();
 	for (const p of phases) {
-		for (const d of p.dependsOn ?? []) hasDependents.add(d);
+		for (const d of dependenciesOf(p)) hasDependents.add(d);
 	}
 	return phases.filter((p) => !hasDependents.has(p.id)).map((p) => p.id);
 }
@@ -117,12 +120,13 @@ function detectDeadEnds(phases: Phase[], succ: Map<string, string[]>): Verificat
 function detectUnreachable(phases: Phase[], succ: Map<string, string[]>): VerificationIssue[] {
 	const issues: VerificationIssue[] = [];
 
-	// Build undirected adjacency (dependsOn edges are bidirectional for
-	// connectivity analysis).
+	// Build undirected adjacency (dependency edges are bidirectional for
+	// connectivity analysis). dependenciesOf = dependsOn ∪ from, so a reduce's
+	// `from`-only upstream stays connected and isn't falsely unreachable.
 	const adj = new Map<string, Set<string>>();
 	for (const p of phases) adj.set(p.id, new Set());
 	for (const p of phases) {
-		for (const d of p.dependsOn ?? []) {
+		for (const d of dependenciesOf(p)) {
 			if (!adj.has(d)) continue; // ref to non-existent phase (schema catches)
 			adj.get(p.id)!.add(d);
 			adj.get(d)!.add(p.id);
@@ -299,7 +303,7 @@ function detectConcurrencyWarnings(flow: VerifiableFlow, _succ: Map<string, stri
 
 	// Self-dependency
 	for (const p of flow.phases) {
-		if ((p.dependsOn ?? []).includes(p.id)) {
+		if (asArray<string>(p.dependsOn).includes(p.id)) {
 			issues.push({
 				phaseId: p.id,
 				message: `Phase '${p.id}' depends on itself — remove self-reference from 'dependsOn'.`,
@@ -318,8 +322,8 @@ function detectGuardContradictions(phases: Phase[]): VerificationIssue[] {
 
 	const groups = new Map<string, Phase[]>();
 	for (const p of phases) {
-		if (!p.when) continue;
-		const key = (p.dependsOn ?? []).sort().join(",");
+		if (typeof p.when !== "string" || !p.when) continue;
+		const key = asArray<string>(p.dependsOn).slice().sort().join(",");
 		if (!groups.has(key)) groups.set(key, []);
 		groups.get(key)!.push(p);
 	}
@@ -362,15 +366,20 @@ function detectGuardContradictions(phases: Phase[]): VerificationIssue[] {
  * This is a pure function — no I/O, no LLM, zero tokens.
  */
 export function verifyTaskflow(flow: VerifiableFlow): VerificationResult {
-	const phases = flow.phases;
+	// Tolerate malformed phase lists: null/non-object elements (validateTaskflow
+	// reports them) would otherwise crash the graph helpers on `p.id`. Filter to
+	// well-formed phase objects so verification degrades gracefully.
+	const phases = asArray<Phase>(flow.phases).filter((p): p is Phase => !!p && typeof p === "object");
+	// Detectors that take the whole flow must see the sanitized phase list too.
+	const safeFlow = { ...flow, phases };
 	const succ = successors(phases);
 	const issues: VerificationIssue[] = [];
 
 	issues.push(...detectDeadEnds(phases, succ));
 	issues.push(...detectUnreachable(phases, succ));
 	issues.push(...detectGateExhaustion(phases, succ));
-	issues.push(...detectBudgetOverflow(flow));
-	issues.push(...detectConcurrencyWarnings(flow, succ));
+	issues.push(...detectBudgetOverflow(safeFlow));
+	issues.push(...detectConcurrencyWarnings(safeFlow, succ));
 	issues.push(...detectGuardContradictions(phases));
 
 	const ok = !issues.some((i) => i.severity === "error");

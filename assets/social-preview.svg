@@ -1,0 +1,83 @@
+<svg width="1280" height="640" viewBox="0 0 1280 640" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="taskflow — declarative DAG orchestration for coding-agent subagents. Fan out, gate, resume, save as a command; intermediate results stay out of your context. Zero deps, runs on Pi and Codex.">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1280" y2="640" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#131A2E"/>
+      <stop offset="0.55" stop-color="#0E1825"/>
+      <stop offset="1" stop-color="#0A1512"/>
+    </linearGradient>
+    <linearGradient id="ti" x1="380" y1="100" x2="900" y2="180" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#B692FF"/>
+      <stop offset="0.5" stop-color="#6E8BFF"/>
+      <stop offset="1" stop-color="#43D9AD"/>
+    </linearGradient>
+    <linearGradient id="edge" x1="150" y1="0" x2="1160" y2="0" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#6E8BFF"/>
+      <stop offset="1" stop-color="#43D9AD"/>
+    </linearGradient>
+  </defs>
+  <rect width="1280" height="640" rx="24" fill="url(#bg)"/>
+
+  <rect x="493" y="44" width="294" height="34" rx="17" fill="#0F1526" stroke="#2C3A60"/>
+  <circle cx="518" cy="61" r="4.5" fill="#43D9AD"/>
+  <text x="536" y="66" font-family="ui-monospace,'SF Mono',Menlo,monospace" font-size="13.5" letter-spacing="1.2" fill="#9DA9C9">Pi · Codex · zero deps</text>
+
+  <text x="640" y="176" text-anchor="middle" font-family="ui-monospace,'SF Mono','JetBrains Mono',Menlo,monospace" font-size="96" font-weight="700" letter-spacing="-3" fill="url(#ti)">taskflow</text>
+  <text x="640" y="224" text-anchor="middle" font-family="system-ui,'Segoe UI',Helvetica,Arial,sans-serif" font-size="22" font-weight="600" fill="#C6CFE8">Declarative DAG orchestration for coding-agent subagents.</text>
+  <text x="640" y="256" text-anchor="middle" font-family="system-ui,'Segoe UI',Helvetica,Arial,sans-serif" font-size="16.5" fill="#8A97B8">Fan out · gate · resume · save as a command — intermediate results stay out of your context.</text>
+
+  <g font-family="ui-monospace,Menlo,monospace" font-size="14" fill="#9FB6F0">
+    <rect x="398" y="286" width="120" height="34" rx="17" fill="#0F1526" stroke="#2C3A60"/>
+    <text x="458" y="308" text-anchor="middle">0 deps</text>
+    <rect x="530" y="286" width="150" height="34" rx="17" fill="#0F1526" stroke="#2C3A60"/>
+    <text x="605" y="308" text-anchor="middle">Pi + Codex</text>
+    <rect x="692" y="286" width="150" height="34" rx="17" fill="#0F1526" stroke="#2C3A60"/>
+    <text x="767" y="308" text-anchor="middle">9 phase types</text>
+  </g>
+
+  <rect x="392" y="352" width="518" height="248" rx="18" fill="#0B111F" fill-opacity="0.6" stroke="#243154" stroke-dasharray="7 6"/>
+  <circle cx="416" cy="378" r="4.5" fill="#A78BFA"/>
+  <text x="430" y="383" font-family="ui-monospace,Menlo,monospace" font-size="13" letter-spacing="1" fill="#9683C6">RUNTIME · isolated context</text>
+
+  <rect x="988" y="352" width="176" height="34" rx="17" fill="#0C1C16" stroke="#1F4A3A"/>
+  <circle cx="1012" cy="369" r="4.5" fill="#43D9AD"/>
+  <text x="1026" y="374" font-family="ui-monospace,Menlo,monospace" font-size="13" letter-spacing="1" fill="#5FCBAC">YOUR CONTEXT</text>
+
+  <g stroke="url(#edge)" stroke-width="3" fill="none" opacity="0.85">
+    <path d="M334 484 C372 484, 372 430, 438 430"/>
+    <path d="M334 484 H438"/>
+    <path d="M334 484 C372 484, 372 538, 438 538"/>
+    <path d="M586 430 C660 430, 660 484, 706 484"/>
+    <path d="M586 484 H706"/>
+    <path d="M586 538 C660 538, 660 484, 706 484"/>
+    <path d="M912 484 H1042" stroke="url(#edge)"/>
+  </g>
+
+  <g font-family="ui-monospace,Menlo,monospace">
+    <rect x="158" y="452" width="176" height="64" rx="12" fill="#141C31" stroke="#324268"/>
+    <text x="246" y="484" text-anchor="middle" font-size="17" font-weight="700" fill="#E7ECF7">definition</text>
+    <text x="246" y="504" text-anchor="middle" font-size="11.5" letter-spacing="1" fill="#8A97B8">ONE JSON DSL</text>
+
+    <g fill="#E7ECF7">
+      <rect x="438" y="404" width="148" height="50" rx="10" fill="#161F36" stroke="#3A3463"/>
+      <text x="458" y="426" font-size="14" font-weight="600">subagent · 1</text>
+      <rect x="458" y="434" width="108" height="6" rx="3" fill="#26345A"/><rect x="458" y="434" width="70" height="6" rx="3" fill="#6E8BFF"/>
+      <rect x="438" y="459" width="148" height="50" rx="10" fill="#161F36" stroke="#3A3463"/>
+      <text x="458" y="481" font-size="14" font-weight="600">subagent · 2</text>
+      <rect x="458" y="489" width="108" height="6" rx="3" fill="#26345A"/><rect x="458" y="489" width="52" height="6" rx="3" fill="#6E8BFF"/>
+      <rect x="438" y="514" width="148" height="50" rx="10" fill="#161F36" stroke="#3A3463"/>
+      <text x="458" y="536" font-size="14" font-weight="600">subagent · N</text>
+      <rect x="458" y="544" width="108" height="6" rx="3" fill="#26345A"/><rect x="458" y="544" width="88" height="6" rx="3" fill="#6E8BFF"/>
+    </g>
+    <text x="512" y="586" text-anchor="middle" font-size="11.5" letter-spacing="1" fill="#8A97B8">MAP · FAN-OUT</text>
+
+    <rect x="706" y="452" width="148" height="64" rx="12" fill="#1C1608" stroke="#6B5320"/>
+    <text x="780" y="482" text-anchor="middle" font-size="17" font-weight="700" fill="#F0B45A">gate</text>
+    <text x="780" y="502" text-anchor="middle" font-size="11.5" letter-spacing="0.5" fill="#C79A4E">VERDICT: PASS</text>
+
+    <rect x="1042" y="452" width="122" height="64" rx="12" fill="#0C1C16" stroke="#1F5A44"/>
+    <text x="1103" y="482" text-anchor="middle" font-size="17" font-weight="700" fill="#43D9AD">report</text>
+    <text x="1103" y="502" text-anchor="middle" font-size="11" letter-spacing="0.5" fill="#5FCBAC">FINAL · returned</text>
+  </g>
+
+  <text x="640" y="622" text-anchor="middle" font-family="system-ui,Helvetica,Arial,sans-serif" font-size="13.5" fill="#6C7896">Dozens of transcripts run here — only the final result crosses back to you.</text>
+</svg>

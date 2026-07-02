@@ -551,8 +551,75 @@ export function validateTaskflow(def: unknown, opts: ValidationOptions = {}): Va
 			errors.push("Each phase requires an 'id'");
 			continue;
 		}
+		if (typeof p.id !== "string") {
+			errors.push(`Phase id must be a string, got ${typeof p.id}`);
+			continue;
+		}
 		if (ids.has(p.id)) errors.push(`Duplicate phase id: ${p.id}`);
 		ids.add(p.id);
+
+		// Array-shaped fields must actually be arrays. Several passes below (and
+		// verify/compile/collectRefs downstream) iterate these; a non-array is
+		// reported as a structured error here. The iteration sites use asArray() so
+		// a bad value degrades to [] instead of throwing "not iterable".
+		for (const key of ["dependsOn", "from", "branches", "eval", "context", "tools"] as const) {
+			const v = (p as Record<string, unknown>)[key];
+			if (v !== undefined && !Array.isArray(v)) {
+				errors.push(`Phase '${p.id}': '${key}' must be an array, got ${typeof v}`);
+			}
+		}
+		// String-shaped scalar fields must be strings when present. They flow into
+		// renderers (label/summarize/nodeId call `.replace`) and the runtime
+		// (cwd -> spawn, model/thinking -> agent config); a non-string would throw
+		// or be silently misused. This is the COMPLETE set of string scalars in
+		// PhaseSchema except `id`/`type`/`over`, which have dedicated checks above.
+		for (const key of [
+			"task",
+			"agent",
+			"use",
+			"when",
+			"until",
+			"as",
+			"model",
+			"thinking",
+			"cwd",
+			"judge",
+			"judgeAgent",
+			"output",
+		] as const) {
+			const v = (p as Record<string, unknown>)[key];
+			if (v !== undefined && typeof v !== "string") {
+				errors.push(`Phase '${p.id}': '${key}' must be a string, got ${typeof v}`);
+			}
+		}
+		// dependsOn / from entries are string phase-id refs that flow into the graph
+		// helpers and nodeId(); a non-string entry would crash the renderer.
+		for (const key of ["dependsOn", "from"] as const) {
+			const v = (p as Record<string, unknown>)[key];
+			if (Array.isArray(v))
+				v.forEach((e, i) => {
+					if (typeof e !== "string")
+						errors.push(`Phase '${p.id}': ${key}[${i}] must be a string phase id, got ${typeof e}`);
+				});
+		}
+		// Branch entries become competitors at runtime (b.task is interpolated); a
+		// non-object / non-string-task entry would crash the runtime, so reject it.
+		if (Array.isArray(p.branches)) {
+			p.branches.forEach((b, i) => {
+				if (!b || typeof b !== "object" || Array.isArray(b))
+					errors.push(`Phase '${p.id}': branches[${i}] must be an object with a 'task', got ${b === null ? "null" : typeof b}`);
+				else if (typeof (b as { task?: unknown }).task !== "string")
+					errors.push(`Phase '${p.id}': branches[${i}].task must be a string`);
+			});
+		}
+		// tools entries are matched against a Set by the adapters (t => set.has(t));
+		// a non-string entry would be silently ignored or misused, so reject it.
+		if (Array.isArray(p.tools)) {
+			p.tools.forEach((t, i) => {
+				if (typeof t !== "string")
+					errors.push(`Phase '${p.id}': tools[${i}] must be a string, got ${typeof t}`);
+			});
+		}
 
 		// When a phase opts into the Shared Context Tree, its id becomes a filesystem
 		// node id; restrict the charset so two ids can't sanitize to the same node
@@ -569,8 +636,20 @@ export function validateTaskflow(def: unknown, opts: ValidationOptions = {}): Va
 		if (type === "agent" || type === "gate") {
 			if (!p.task) errors.push(`Phase '${p.id}' (${type}) requires 'task'`);
 		}
+		if (type === "gate" && Array.isArray(p.eval)) {
+			// eval entries are interpolated + parsed at runtime (expr.indexOf/.slice);
+			// a non-string entry would crash the gate, so reject it up front.
+			p.eval.forEach((e, i) => {
+				if (typeof e !== "string")
+					errors.push(`Phase '${p.id}' (gate): eval[${i}] must be a string condition, got ${typeof e}`);
+			});
+		}
 		if (type === "map") {
 			if (!p.over) errors.push(`Phase '${p.id}' (map) requires 'over'`);
+			else if (typeof p.over !== "string")
+				errors.push(
+					`Phase '${p.id}' (map): 'over' must be a string interpolation ref (e.g. "{steps.scan.json}"), not a ${Array.isArray(p.over) ? "literal array" : typeof p.over}. To fan out over a fixed list, emit it from an upstream phase and reference that phase's .json.`,
+				);
 			if (!p.task) errors.push(`Phase '${p.id}' (map) requires 'task'`);
 		}
 		if (type === "parallel") {
@@ -656,6 +735,9 @@ export function validateTaskflow(def: unknown, opts: ValidationOptions = {}): Va
 
 		// Cache policy validation (cross-run memoization).
 		if (p.cache) {
+			if (typeof p.cache !== "object" || Array.isArray(p.cache)) {
+				errors.push(`Phase '${p.id}': 'cache' must be an object`);
+			} else {
 			const scope = p.cache.scope ?? "run-only";
 			if (!CACHE_SCOPES.includes(scope as CacheScope)) {
 				errors.push(`Phase '${p.id}': unknown cache.scope '${scope}' (expected one of ${CACHE_SCOPES.join(", ")})`);
@@ -667,17 +749,25 @@ export function validateTaskflow(def: unknown, opts: ValidationOptions = {}): Va
 				);
 			}
 			// Gate C: every fingerprint entry must use a known prefix (fail closed).
-			for (const fp of p.cache.fingerprint ?? []) {
-				const ok = CACHE_FINGERPRINT_PREFIXES.some((pre) => fp.startsWith(pre) && fp.length > pre.length);
-				if (!ok) {
-					errors.push(
-						`Phase '${p.id}': invalid cache.fingerprint entry '${fp}' (expected '<prefix><value>' with prefix one of ${CACHE_FINGERPRINT_PREFIXES.join(", ")})`,
-					);
+			if (p.cache.fingerprint !== undefined && !Array.isArray(p.cache.fingerprint)) {
+				errors.push(`Phase '${p.id}': 'cache.fingerprint' must be an array of strings`);
+			} else
+				for (const fp of p.cache.fingerprint ?? []) {
+					if (typeof fp !== "string") {
+						errors.push(`Phase '${p.id}': cache.fingerprint entries must be strings, got ${typeof fp}`);
+						continue;
+					}
+					const ok = CACHE_FINGERPRINT_PREFIXES.some((pre) => fp.startsWith(pre) && fp.length > pre.length);
+					if (!ok) {
+						errors.push(
+							`Phase '${p.id}': invalid cache.fingerprint entry '${fp}' (expected '<prefix><value>' with prefix one of ${CACHE_FINGERPRINT_PREFIXES.join(", ")})`,
+						);
+					}
 				}
-			}
 			// Gate D: TTL must parse to a positive duration when present.
 			if (p.cache.ttl !== undefined && parseTtlMs(p.cache.ttl) === null) {
 				errors.push(`Phase '${p.id}': invalid cache.ttl '${p.cache.ttl}' (expected e.g. '30m', '6h', '7d')`);
+			}
 			}
 		}
 
@@ -687,7 +777,7 @@ export function validateTaskflow(def: unknown, opts: ValidationOptions = {}): Va
 		}
 
 		// Phase id convention: hyphens only (consistent with interpolation placeholders like {steps.audit-each.output})
-		if (p.id && p.id.includes("_")) {
+		if (typeof p.id === "string" && p.id.includes("_")) {
 			errors.push(`Phase '${p.id}': id uses underscores — use hyphens for consistency with interpolation placeholders (e.g. {steps.audit-each.output})`);
 		}
 	}
@@ -695,10 +785,10 @@ export function validateTaskflow(def: unknown, opts: ValidationOptions = {}): Va
 	// dependsOn / from references must exist
 	for (const p of flow.phases) {
 		if (!p?.id) continue;
-		for (const dep of p.dependsOn ?? []) {
+		for (const dep of asArray<string>(p.dependsOn)) {
 			if (!ids.has(dep)) errors.push(`Phase '${p.id}': dependsOn unknown phase '${dep}'`);
 		}
-		for (const f of p.from ?? []) {
+		for (const f of asArray<string>(p.from)) {
 			if (!ids.has(f)) errors.push(`Phase '${p.id}': from unknown phase '${f}'`);
 		}
 	}
@@ -707,7 +797,7 @@ export function validateTaskflow(def: unknown, opts: ValidationOptions = {}): Va
 	const VALID_AGENT_RE = /^[a-z][a-z0-9-]*$/;
 	for (const p of flow.phases) {
 		if (!p?.id) continue;
-		if (p.agent && !p.agent.includes("_") && !VALID_AGENT_RE.test(p.agent)) {
+		if (typeof p.agent === "string" && !p.agent.includes("_") && !VALID_AGENT_RE.test(p.agent)) {
 			errors.push(`Phase '${p.id}': agent '${p.agent}' has invalid name format (expected lowercase alphanumeric with hyphens)`);
 		}
 	}
@@ -751,7 +841,7 @@ export function validateTaskflow(def: unknown, opts: ValidationOptions = {}): Va
 				result.add(id);
 				const dep = idToPhase.get(id);
 				if (dep) {
-					for (const d of [...(dep.dependsOn ?? []), ...(dep.from ?? [])]) {
+					for (const d of [...asArray<string>(dep.dependsOn), ...asArray<string>(dep.from)]) {
 						if (!result.has(d)) queue.push(d);
 					}
 				}
@@ -839,10 +929,10 @@ export function collectRefs(phase: Phase): { steps: string[]; args: string[] } {
 	scan(phase.over);
 	scan(phase.when);
 	scan(phase.until);
-	for (const e of phase.eval ?? []) scan(e);
-	for (const b of phase.branches ?? []) scan(b.task);
+	for (const e of asArray<string>(phase.eval)) if (typeof e === "string") scan(e);
+	for (const b of asArray<{ task?: string }>(phase.branches)) if (b && typeof b === "object") scan(b.task);
 	for (const v of Object.values(phase.with ?? {})) if (typeof v === "string") scan(v);
-	for (const c of phase.context ?? []) scan(c);
+	for (const c of asArray<string>(phase.context)) if (typeof c === "string") scan(c);
 	return { steps: Array.from(steps), args: Array.from(args) };
 }
 
@@ -892,9 +982,16 @@ function detectCycle(phases: Phase[]): string[] | null {
 	return null;
 }
 
+/** Coerce a possibly-non-array field to an array so iteration never throws
+ *  "not iterable". validateTaskflow reports the non-array as a structured error;
+ *  every for..of over an array-shaped phase field routes through here. */
+export function asArray<T>(v: unknown): T[] {
+	return Array.isArray(v) ? (v as T[]) : [];
+}
+
 /** Effective dependency ids of a phase (dependsOn ∪ from). */
 export function dependenciesOf(phase: Phase): string[] {
-	const set = new Set<string>([...(phase.dependsOn ?? []), ...(phase.from ?? [])]);
+	const set = new Set<string>([...asArray<string>(phase.dependsOn), ...asArray<string>(phase.from)]);
 	return Array.from(set);
 }
 

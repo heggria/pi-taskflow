@@ -45,6 +45,56 @@ test("verify: dead-end — explicit final suppresses warning", () => {
 	assert.equal(dead[0].phaseId, "b");
 });
 
+test("verify: reduce `from` counts as a real edge — upstream isn't terminal", () => {
+	// `sum` depends on `scan` only via reduce `from` (not dependsOn). Graph helpers
+	// must treat `from` as an edge (dependenciesOf = dependsOn ∪ from), or `scan`
+	// is falsely flagged as a terminal dead-end.
+	const flow = vf([
+		agent("scan"),
+		{ id: "sum", type: "reduce", from: ["scan"], task: "summarize", final: true } as Phase,
+	]);
+	const r = verifyTaskflow(flow);
+	const dead = r.issues.filter((i) => i.category === "dead-end");
+	assert.equal(dead.length, 0, "scan feeds the reduce, so it is not a dead-end");
+	const unreachable = r.issues.filter((i) => i.category === "unreachable");
+	assert.equal(unreachable.length, 0, "sum is reachable via its `from` edge");
+});
+
+test("verify: reduce `from` keeps upstream connected in a 3-phase chain", () => {
+	// scan -> reduce(from) -> ship. The connectivity walk (detectUnreachable) must
+	// also follow `from`, or `scan` is reported unreachable/disconnected even
+	// though it feeds the reduce that feeds the final phase.
+	const flow = vf([
+		agent("scan"),
+		{ id: "sum", type: "reduce", from: ["scan"], task: "summarize" } as Phase,
+		agent("ship", ["sum"], { final: true }),
+	]);
+	const r = verifyTaskflow(flow);
+	const unreachable = r.issues.filter((i) => i.category === "unreachable");
+	assert.equal(unreachable.length, 0, "scan is connected via its reduce `from` edge");
+	const dead = r.issues.filter((i) => i.category === "dead-end");
+	assert.equal(dead.length, 0, "no dead-ends: scan->sum->ship all feed forward");
+});
+
+test("verify: tolerates null / non-object phase elements without throwing", () => {
+	// A malformed phase list (validateTaskflow reports it) must degrade gracefully
+	// — every detector, incl. the flow-taking ones (concurrency/budget), sees the
+	// sanitized phase list, not raw nulls.
+	assert.doesNotThrow(() => verifyTaskflow(vf([null as unknown as Phase])));
+	assert.doesNotThrow(() => verifyTaskflow(vf(["nope" as unknown as Phase, agent("a", undefined, { final: true })])));
+});
+
+test("verify: non-string `when` doesn't crash guard-contradiction analysis", () => {
+	// detectGuardContradictions calls .match()/.includes() on `when`; a non-string
+	// value (validateTaskflow reports it) must be skipped, not throw.
+	const flow = vf([
+		agent("src"),
+		{ ...agent("a", ["src"]), when: 1 } as unknown as Phase,
+		{ ...agent("b", ["src"]), when: 2 } as unknown as Phase,
+	]);
+	assert.doesNotThrow(() => verifyTaskflow(flow));
+});
+
 // ---------------------------------------------------------------------------
 // Unreachable detection
 // ---------------------------------------------------------------------------

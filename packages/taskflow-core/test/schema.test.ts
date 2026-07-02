@@ -25,6 +25,15 @@ test("validateTaskflow: rejects missing name / phases", () => {
 test("validateTaskflow: per-type requirements", () => {
 	assert.equal(validateTaskflow({ name: "x", phases: [{ id: "p", type: "agent" }] }).ok, false); // no task
 	assert.equal(validateTaskflow({ name: "x", phases: [{ id: "p", type: "map", task: "t" }] }).ok, false); // no over
+	// over must be a string ref, not a literal array/object (would crash directRef at runtime)
+	assert.equal(
+		validateTaskflow({ name: "x", phases: [{ id: "p", type: "map", task: "t", over: ["a", "b"] }] }).ok,
+		false,
+	);
+	assert.match(
+		validateTaskflow({ name: "x", phases: [{ id: "p", type: "map", task: "t", over: ["a"] }] }).errors.join("\n"),
+		/literal array/,
+	);
 	assert.equal(validateTaskflow({ name: "x", phases: [{ id: "p", type: "parallel" }] }).ok, false); // no branches
 	assert.equal(validateTaskflow({ name: "x", phases: [{ id: "p", type: "reduce", task: "t" }] }).ok, false); // no from
 	assert.equal(validateTaskflow({ name: "x", phases: [{ id: "p", type: "flow" }] }).ok, false); // no use
@@ -385,4 +394,100 @@ test("validateTaskflow: phase id with underscores gets interpolation message", (
 	assert.equal(r.ok, false);
 	const idError = r.errors.find(e => e.includes("my_phase") && e.includes("interpolation"));
 	assert.ok(idError, `expected interpolation message in error, got: ${r.errors}`);
+});
+
+test("validateTaskflow: non-array array-fields error instead of throwing", () => {
+	// dependsOn/from/branches/eval/context are iterated with for..of downstream;
+	// a non-array value must yield a structured error, never a TypeError.
+	for (const key of ["dependsOn", "from", "branches", "eval", "context"]) {
+		const phase: Record<string, unknown> = { id: "a", type: "agent", task: "t", [key]: 1 };
+		let r: ReturnType<typeof validateTaskflow>;
+		assert.doesNotThrow(() => {
+			r = validateTaskflow({ name: "x", phases: [phase] });
+		}, `${key} non-array must not throw`);
+		r = validateTaskflow({ name: "x", phases: [phase] });
+		assert.equal(r.ok, false, `${key} non-array is invalid`);
+		assert.ok(
+			r.errors.some((e) => e.includes(`'${key}'`) && e.includes("must be an array")),
+			`expected an array-type error for ${key}, got: ${r.errors}`,
+		);
+	}
+});
+
+test("validateTaskflow: non-string scalar fields error instead of throwing", () => {
+	// task/agent/use/when/until flow into the renderers (.replace/.includes); a
+	// non-string must be a structured error, not a TypeError, and must not pass.
+	for (const key of ["task", "agent", "use", "when", "until"]) {
+		const phase: Record<string, unknown> = { id: "a", type: "agent", task: "t", [key]: 1 };
+		let r: ReturnType<typeof validateTaskflow>;
+		assert.doesNotThrow(() => {
+			r = validateTaskflow({ name: "x", phases: [phase] });
+		}, `${key} non-string must not throw`);
+		r = validateTaskflow({ name: "x", phases: [phase] });
+		assert.equal(r.ok, false, `${key} non-string is invalid`);
+	}
+});
+
+test("validateTaskflow: the full set of string scalars + dependsOn/from entries reject non-strings", () => {
+	// Complete coverage of every string-typed phase field (they reach renderers
+	// via .replace / the runtime via spawn cwd / agent config) so a non-string is
+	// a structured error, never a runtime crash or a silently-misused value.
+	for (const key of ["as", "model", "thinking", "cwd", "judge", "judgeAgent", "output"]) {
+		const phase: Record<string, unknown> = { id: "a", type: "agent", task: "t", [key]: 1 };
+		const r = validateTaskflow({ name: "x", phases: [phase] });
+		assert.equal(r.ok, false, `${key} non-string is invalid`);
+		assert.ok(r.errors.some((e) => e.includes(`'${key}'`)), `expected a ${key} error, got: ${r.errors}`);
+	}
+	for (const key of ["dependsOn", "from"]) {
+		const phase: Record<string, unknown> = { id: "a", type: "reduce", task: "t", [key]: [1] };
+		const r = validateTaskflow({ name: "x", phases: [phase] });
+		assert.equal(r.ok, false, `${key} with a non-string entry is invalid`);
+		assert.ok(r.errors.some((e) => e.includes(`${key}[0]`)), `expected a ${key}[0] error, got: ${r.errors}`);
+	}
+});
+
+test("validateTaskflow: non-string id / null phase don't throw", () => {
+	assert.doesNotThrow(() => validateTaskflow({ name: "x", phases: [{ id: 1, type: "agent", task: "t" }] }));
+	assert.doesNotThrow(() => validateTaskflow({ name: "x", phases: [null] }));
+	assert.doesNotThrow(() => validateTaskflow({ name: "x", phases: ["nope"] }));
+	const r = validateTaskflow({ name: "x", phases: [null] });
+	assert.equal(r.ok, false, "a null phase is invalid");
+	const r2 = validateTaskflow({ name: "x", phases: [{ id: 1, type: "agent", task: "t" }] });
+	assert.equal(r2.ok, false, "a non-string id is invalid");
+	assert.ok(r2.errors.some((e) => e.includes("id must be a string")), `got: ${r2.errors}`);
+});
+
+test("validateTaskflow: gate eval entries must be strings", () => {
+	// eval entries are interpolated + parsed at runtime (expr.indexOf); a non-string
+	// entry must be a structured error, not a runtime crash.
+	const r = validateTaskflow({ name: "x", phases: [{ id: "a", type: "gate", task: "t", eval: [1] }] });
+	assert.equal(r.ok, false, "non-string eval entry is invalid");
+	assert.ok(r.errors.some((e) => e.includes("eval[0]") && e.includes("must be a string")), `got: ${r.errors}`);
+	// A well-formed string eval stays valid.
+	const ok = validateTaskflow({
+		name: "x",
+		phases: [{ id: "a", type: "gate", task: "t", eval: ["{steps.a.output} contains PASS"] }],
+	});
+	assert.ok(ok.errors.every((e) => !e.includes("eval")), `string eval should be accepted, got: ${ok.errors}`);
+});
+
+test("validateTaskflow: malformed cache / branches error instead of throwing", () => {
+	// Round-9 crashers: cache.fingerprint iterated as strings, branches iterated
+	// as objects at runtime — both must be structured errors, never a TypeError.
+	const cases: Array<[string, unknown]> = [
+		["cache non-object", { id: "a", type: "agent", task: "t", cache: 1 }],
+		["cache.fingerprint non-array", { id: "a", type: "agent", task: "t", cache: { fingerprint: 1 } }],
+		["cache.fingerprint entry non-string", { id: "a", type: "agent", task: "t", cache: { fingerprint: [1] } }],
+		["branches null entry", { id: "a", type: "parallel", branches: [null] }],
+		["branches scalar entry", { id: "a", type: "parallel", branches: [1] }],
+		["branches entry task non-string", { id: "a", type: "parallel", branches: [{ task: 1 }] }],
+	];
+	for (const [label, phase] of cases) {
+		let r: ReturnType<typeof validateTaskflow>;
+		assert.doesNotThrow(() => {
+			r = validateTaskflow({ name: "x", phases: [phase] });
+		}, `${label} must not throw`);
+		r = validateTaskflow({ name: "x", phases: [phase] });
+		assert.equal(r.ok, false, `${label} is invalid`);
+	}
 });

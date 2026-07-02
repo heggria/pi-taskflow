@@ -1,4 +1,4 @@
-<svg width="1000" height="300" viewBox="0 0 1000 300" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Context isolation: with raw subagents every transcript floods your context; with pi-taskflow only the final result returns">
+<svg width="1000" height="300" viewBox="0 0 1000 300" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Context isolation: with raw subagents every transcript floods your context; with taskflow only the final result returns">
   <defs>
     <linearGradient id="cbg" x1="0" y1="0" x2="1000" y2="300" gradientUnits="userSpaceOnUse">
       <stop offset="0" stop-color="#0B0E16"/><stop offset="1" stop-color="#0E1322"/>
@@ -27,8 +27,8 @@
     <rect x="86" y="220" width="328" height="16" rx="4" fill="#3A2630"/><text x="94" y="231" fill="#D6A0A0">✓ the answer (buried)</text>
   </g>
 
-  <!-- RIGHT: pi-taskflow -->
-  <text x="750" y="46" text-anchor="middle" font-family="ui-monospace, Menlo, monospace" font-size="13" letter-spacing="1" fill="#5FCBAC">pi-taskflow</text>
+  <!-- RIGHT: taskflow -->
+  <text x="750" y="46" text-anchor="middle" font-family="ui-monospace, Menlo, monospace" font-size="13" letter-spacing="1" fill="#5FCBAC">taskflow</text>
   <text x="750" y="66" text-anchor="middle" font-family="system-ui, sans-serif" font-size="12" fill="#8A93AE">transcripts stay in the runtime</text>
   <!-- runtime sandbox -->
   <rect x="540" y="86" width="190" height="170" rx="13" fill="#0E1626" stroke="#2A3a66" stroke-dasharray="5 5"/>
