@@ -16,6 +16,7 @@
 
 import type { Phase, Taskflow } from "./schema.ts";
 import {
+	asArray,
 	LOOP_DEFAULT_MAX_ITERATIONS,
 	TOURNAMENT_DEFAULT_VARIANTS,
 } from "./schema.ts";
@@ -47,8 +48,9 @@ export interface CompileOptions {
 
 /** Mermaid node ids must be free of spaces and syntax chars. Phase ids are
  *  already `[A-Za-z0-9_-]`-ish, but we defensively map anything else to `_`. */
-function nodeId(phaseId: string): string {
-	const cleaned = phaseId.replace(/[^A-Za-z0-9_]/g, "_");
+function nodeId(phaseId: unknown): string {
+	const s = typeof phaseId === "string" ? phaseId : String(phaseId);
+	const cleaned = s.replace(/[^A-Za-z0-9_]/g, "_");
 	// A leading digit is legal in Mermaid ids, but prefix to avoid edge-case
 	// parsers and keep ids stable/unique.
 	return /^[A-Za-z_]/.test(cleaned) ? cleaned : `p_${cleaned}`;
@@ -72,7 +74,7 @@ function buildNodeIds(phases: Phase[]): Map<string, string> {
 		ordered.push(p.id);
 	}
 	for (const p of phases) {
-		for (const d of p.dependsOn ?? []) {
+		for (const d of asArray<string>(p.dependsOn)) {
 			if (!seen.has(d)) {
 				seen.add(d);
 				ordered.push(d);
@@ -107,9 +109,12 @@ function label(text: string): string {
 }
 
 /** Truncate a task prompt to a single readable line for the node body. */
-function summarize(text: string | undefined, max = 48): string {
-	if (!text) return "";
-	const firstLine = text.replace(/\s+/g, " ").trim();
+function summarize(text: unknown, max = 48): string {
+	// Defensive: a malformed non-string field (validateTaskflow reports it) must
+	// not crash the renderer via `.replace`.
+	if (text == null || text === "") return "";
+	const s = typeof text === "string" ? text : String(text);
+	const firstLine = s.replace(/\s+/g, " ").trim();
 	return firstLine.length > max ? `${firstLine.slice(0, max - 1)}…` : firstLine;
 }
 
@@ -119,9 +124,10 @@ function summarize(text: string | undefined, max = 48): string {
  *  neutralizes characters that start markdown constructs: backticks (code
  *  spans), brackets (links/images), angle brackets (raw HTML), and backslashes
  *  (escape sequences). */
-function mdInline(text: string | undefined): string {
-	if (!text) return "";
-	return text
+function mdInline(text: unknown): string {
+	if (text == null || text === "") return "";
+	const s = typeof text === "string" ? text : String(text);
+	return s
 		.replace(/\s+/g, " ")
 		.trim()
 		.replace(/\\/g, "\\\\")
@@ -214,13 +220,14 @@ function nodeShape(p: Phase, idMap: Map<string, string>): string {
 // Edge rendering
 // ---------------------------------------------------------------------------
 
-/** Build the directed edges from `dependsOn`. A `when` guard becomes an edge
- *  label; a `join: "any"` dependency is drawn dotted (races, not waits-all). */
+/** Build the directed edges. `dependsOn` edges carry `when`-guard labels and
+ *  dotted `join: "any"` races; `reduce.from` edges are plain aggregation edges
+ *  (same set the runtime + verifier use via dependenciesOf = dependsOn ∪ from). */
 function edges(phases: Phase[], idMap: Map<string, string>): string[] {
 	const known = new Set(phases.map((p) => p.id));
 	const out: string[] = [];
 	for (const p of phases) {
-		const deps = p.dependsOn ?? [];
+		const deps = asArray<string>(p.dependsOn);
 		for (const d of deps) {
 			if (!known.has(d)) continue; // dangling ref — schema/verify reports it
 			const from = idMap.get(d) ?? d;
@@ -230,6 +237,15 @@ function edges(phases: Phase[], idMap: Map<string, string>): string[] {
 			// race semantics are visible.
 			const arrow = p.join === "any" ? "-.->" : "-->";
 			out.push(`${from} ${arrow}${guard} ${to}`);
+		}
+		// reduce `from`: real dependency edges the runtime waits on. Skip any that
+		// are also in dependsOn (already drawn above) to avoid a double edge.
+		const dependsSet = new Set(deps);
+		for (const d of asArray<string>(p.from)) {
+			if (!known.has(d) || dependsSet.has(d)) continue;
+			const from = idMap.get(d) ?? d;
+			const to = idMap.get(p.id) ?? p.id;
+			out.push(`${from} --> ${to}`);
 		}
 	}
 	return out;
@@ -259,7 +275,9 @@ function severityByPhase(issues: VerificationIssue[]): Map<string, "error" | "wa
 // ---------------------------------------------------------------------------
 
 function buildMermaid(flow: Taskflow, verification: VerificationResult, opts: CompileOptions): string {
-	const phases = flow.phases ?? [];
+	const phases = (Array.isArray(flow.phases) ? flow.phases : []).filter(
+		(p): p is (typeof flow.phases)[number] => !!p && typeof p === "object",
+	);
 	const dir = opts.direction ?? "TD";
 	const idMap = buildNodeIds(phases);
 	const sev = severityByPhase(verification.issues);

@@ -1048,6 +1048,12 @@ async function executePhaseInner(
 			const evalCtx = buildInterpolationContext(state, previousOutput, undefined, onRead);
 			let allPassed = true;
 			for (const check of phase.eval) {
+				// Defensive: a non-string check (validation reports it) must not crash the
+				// gate. Treat it as a failed check so the LLM gate runs (fail-safe).
+				if (typeof check !== "string") {
+					allPassed = false;
+					break;
+				}
 				let expr = check;
 				// Pre-process `contains` expressions: "{steps.x.output} contains PASS"
 				// Convert to: interpolate LHS, check RHS substring inclusion.
@@ -1056,6 +1062,13 @@ async function executePhaseInner(
 					const lhs = expr.slice(0, containsIdx).trim();
 					const rhs = expr.slice(containsIdx + " contains ".length).trim();
 					const lhsVal = interpolate(lhs, evalCtx);
+					// An unresolved LHS ref (e.g. a typo'd or not-yet-produced step) must NOT
+					// silently auto-PASS the gate — that would skip a safety check. Treat a
+					// missing ref as a failed eval so the LLM gate runs (fail-safe).
+					if (lhsVal.missing.length > 0) {
+						allPassed = false;
+						break;
+					}
 					const lhsStr = lhsVal.text;
 					if (!lhsStr.includes(rhs)) {
 						allPassed = false;
@@ -1063,7 +1076,11 @@ async function executePhaseInner(
 					}
 					continue;
 				}
-				if (!evaluateCondition(expr, evalCtx)) {
+				// A parse error must NOT auto-PASS the safety gate (evaluateCondition
+				// fails open with `true`). Treat an unparseable/false eval as a failed
+				// check so the LLM gate runs (fail-safe).
+				const { value: passed, error: evalErr } = tryEvaluateCondition(expr, evalCtx);
+				if (evalErr || !passed) {
 					allPassed = false;
 					break;
 				}
@@ -1775,7 +1792,8 @@ async function executePhaseInner(
 }
 
 /** Resolve a `{steps.x.json}`-style ref directly to its parsed value (bypassing stringify). */
-function directRef(over: string, state: RunState): unknown {
+function directRef(over: unknown, state: RunState): unknown {
+	if (typeof over !== "string") return undefined;
 	const m = over.match(/^\{steps\.([a-zA-Z0-9_-]+)\.(output|json)(?:\.([a-zA-Z0-9_-]+(?:\.[a-zA-Z0-9_-]+)*))?\}$/);
 	if (!m) return undefined;
 	const step = state.phases[m[1]];

@@ -1,0 +1,41 @@
+{
+  "name": "taskflow",
+  "version": "0.1.3",
+  "description": "Declarative, verifiable DAG orchestration for Codex subagents — fan-out, gates, loops, tournaments, approvals, resumable runs, and saveable commands, with intermediate transcripts kept out of your context.",
+  "author": {
+    "name": "heggria",
+    "email": "bshengtao@gmail.com"
+  },
+  "homepage": "https://github.com/heggria/taskflow",
+  "repository": "https://github.com/heggria/taskflow",
+  "license": "MIT",
+  "keywords": [
+    "taskflow",
+    "orchestration",
+    "subagents",
+    "workflow",
+    "dag",
+    "mcp",
+    "codex"
+  ],
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "Taskflow",
+    "shortDescription": "Declarative multi-phase subagent workflows",
+    "longDescription": "Use Taskflow to orchestrate multi-phase subagent work as a declarative DAG: fan out over many items, route conditionally, guard quality with gates, and iterate with loops and tournaments — while intermediate transcripts stay in the runtime and only the final result returns to your context.",
+    "developerName": "heggria",
+    "category": "Developer Tools",
+    "capabilities": [
+      "Interactive",
+      "Write"
+    ],
+    "websiteURL": "https://github.com/heggria/taskflow",
+    "defaultPrompt": [
+      "Orchestrate a multi-phase subagent workflow: discover the items, work them in parallel, cross-check with a gate, and report."
+    ],
+    "composerIcon": "./assets/taskflow-small.svg",
+    "logo": "./assets/taskflow.svg",
+    "brandColor": "#B692FF"
+  }
+}

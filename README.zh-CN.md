@@ -1,45 +1,49 @@
 <div align="center">
 
-<img src="./assets/hero.png" alt="pi-taskflow — 面向 Pi 子代理的声明式、可验证的任务节点图：有状态、可恢复、上下文隔离" width="900">
+<img src="./assets/hero.png" alt="taskflow — 面向编码智能体子代理的声明式、可验证的任务节点图：有状态、可恢复、上下文隔离" width="900">
 
 <p>
   <a href="https://www.npmjs.com/package/pi-taskflow"><img src="https://img.shields.io/npm/v/pi-taskflow?style=flat-square&color=B692FF&label=npm" alt="npm version"></a>
   <a href="https://www.npmjs.com/package/pi-taskflow"><img src="https://img.shields.io/npm/dm/pi-taskflow?style=flat-square&color=6E8BFF&label=downloads" alt="npm downloads"></a>
   <a href="./LICENSE"><img src="https://img.shields.io/badge/license-MIT-43D9AD?style=flat-square" alt="MIT license"></a>
   <a href="#whats-inside"><img src="https://img.shields.io/badge/runtime%20deps-0-43D9AD?style=flat-square" alt="zero runtime dependencies"></a>
-  <a href="https://github.com/heggria/pi-taskflow/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/heggria/pi-taskflow/ci.yml?branch=main&style=flat-square&label=CI" alt="CI status"></a>
-  <a href="#whats-inside"><img src="https://img.shields.io/badge/tests-872-6E8BFF?style=flat-square" alt="872 tests"></a>
+  <a href="https://github.com/heggria/taskflow/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/heggria/taskflow/ci.yml?branch=main&style=flat-square&label=CI" alt="CI status"></a>
+  <a href="#whats-inside"><img src="https://img.shields.io/badge/tests-897-6E8BFF?style=flat-square" alt="895 tests"></a>
   <a href="#whats-inside"><img src="https://img.shields.io/badge/dogfooded-%E2%9C%93-43D9AD?style=flat-square" alt="dogfooded"></a>
-  <a href="https://pi.dev"><img src="https://img.shields.io/badge/for-Pi%20coding%20agent-B692FF?style=flat-square" alt="for the Pi coding agent"></a>
+  <a href="#run-it-on-your-agent"><img src="https://img.shields.io/badge/runs%20on-Pi%20%2B%20Codex-B692FF?style=flat-square" alt="runs on Pi and Codex"></a>
 </p>
 
 <p align="center">
   <a href="./README.md">English</a> ·
   <b>简体中文</b> ·
-  <a href="./README.hi.md">हिन्दी</a> ·
-  <a href="./README.es.md">Español</a> ·
-  <a href="./README.ar.md">العربية</a>
-  <!-- 其余翻译版本文档创建后可添加链接:
-  · <a href="./README.bn.md">বাংলা</a>
-  · <a href="./README.pt.md">Português</a>
-  · <a href="./README.ru.md">Русский</a>
-  -->
+  <a href="./docs/i18n/README.hi.md">हिन्दी</a> ·
+  <a href="./docs/i18n/README.es.md">Español</a> ·
+  <a href="./docs/i18n/README.ar.md">العربية</a> ·
+  <a href="./docs/i18n/README.bn.md">বাংলা</a> ·
+  <a href="./docs/i18n/README.pt.md">Português</a> ·
+  <a href="./docs/i18n/README.ru.md">Русский</a>
 </p>
 
-<p><strong>面向 <a href="https://pi.dev">Pi</a> 子代理（subagent）的声明式、可验证的「任务图」。</strong><br/>
-不是你要去「写脚本」的 workflow——而是你去「声明」的一张 DAG。并发分发（fan out）· 门控（gate）· 恢复（resume）· 保存为命令——中间结果始终远离你的上下文窗口（context window）。</p>
+<p><strong>面向编码智能体子代理（subagent）的声明式、可验证的「任务图」。</strong><br/>
+不是你要去「写脚本」的 workflow——而是你去「声明」的一张 DAG。并发分发（fan out）· 门控（gate）· 恢复（resume）· 保存为命令——中间结果始终远离你的上下文窗口（context window）。<br/>
+可运行于 <a href="https://pi.dev">Pi</a> 编码智能体与 <a href="https://github.com/openai/codex">OpenAI Codex</a>。</p>
 
 ```bash
+# Pi
 pi install npm:pi-taskflow
+
+# Codex
+codex plugin marketplace add heggria/taskflow
+codex plugin add taskflow@taskflow
 ```
 
 </div>
 
 ---
 
-**`workflow` 是在「流动」，而 `taskflow` 是一张「图」。** 其他编排框架让模型去「写脚本」——命令式的代码逐步流动，而那张图藏在控制流里。`pi-taskflow` 恰恰相反：你把工作**声明**为一张由离散、具名的**任务（task）节点**、通过 `dependsOn` 边连接而成的图——而运行时会在花掉一个 token 之前，*先验证这张图。*
+**`workflow` 是在「流动」，而 `taskflow` 是一张「图」。** 其他编排框架让模型去「写脚本」——命令式的代码逐步流动，而那张图藏在控制流里。`taskflow` 恰恰相反：你把工作**声明**为一张由离散、具名的**任务（task）节点**、通过 `dependsOn` 边连接而成的图——而运行时会在花掉一个 token 之前，*先验证这张图。*
 
-你已经熟悉内置子代理（subagent）工具的 `task` / `tasks` / `chain` 了。`pi-taskflow` 使用**完全相同的简写语法**——所以你现有的委托立刻就能变成**可追踪、可恢复、可保存为一条 `/tf:<name>` 命令**的流程。当你超越简写语法时，完整的 DSL 为你提供真正的 DAG：针对数十个项目的动态并发分发、条件路由、质量门控、人工审批、重试，以及硬性费用上限。
+你已经熟悉内置子代理（subagent）工具的 `task` / `tasks` / `chain` 了。`taskflow` 使用**完全相同的简写语法**——所以你现有的委托立刻就能变成**可追踪、可恢复、可按名保存**的流程（在 Pi 上，已保存的流程会变成一条 `/tf:<name>` 命令；在 Codex 上，用 `taskflow_run` 按名运行）。当你超越简写语法时，完整的 DSL 为你提供真正的 DAG：针对数十个项目的动态并发分发、条件路由、质量门控、人工审批、重试，以及硬性费用上限。
 
 而且自始至终，**只有最终阶段（final phase）才会进入你的对话。** 每一个中间转录都留在运行时中，永远不会进入你的上下文窗口。
 
@@ -62,21 +66,21 @@ pi install npm:pi-taskflow
 
 这就是你在使用原生子代理时遇到的瓶颈：你用文字描述一个多步骤计划，模型每次都要重新推导，中间转录物塞满你的上下文，一旦某次模型调用失败你就得从头开始。没有复用，没有恢复，没有结构——也没有任何办法在烧掉 token 之前*检查*这个计划。
 
-`pi-taskflow` 把计划**从提示词中移出，放入一张由任务节点构成的声明式图里。** 运行时（runtime）拥有 DAG、循环、重试和中间状态的所有权。你声明一次流水线，就能按名字运行上百次。因为这个计划是数据——不是文字，也不是代码——所以它可以被**验证、可视化、重放**。
+`taskflow` 把计划**从提示词中移出，放入一张由任务节点构成的声明式图里。** 运行时（runtime）拥有 DAG、循环、重试和中间状态的所有权。你声明一次流水线，就能按名字运行上百次。因为这个计划是数据——不是文字，也不是代码——所以它可以被**验证、可视化、重放**。
 
 <div align="center">
-<img src="./assets/context-isolation.png" alt="使用原生子代理时每个转录物都涌入你的上下文；使用 pi-taskflow 时转录物留在运行时，只有最终结果返回" width="900">
+<img src="./assets/context-isolation.png" alt="使用原生子代理时每个转录物都涌入你的上下文；使用 taskflow 时转录物留在运行时，只有最终结果返回" width="900">
 </div>
 
 > 十二个步骤、分支并发分发、一道审查门控、一个费用上限——这就是一张图，你想要*看到并检查*它，而不是每次运行都重新提示一遍。
 
-| | 子代理（内置） | **pi-taskflow** |
+| | 子代理（内置） | **taskflow** |
 |---|---|---|
 | **谁在驱动** | 模型，逐轮驱动 | 运行时，依据定义驱动 |
 | **拓扑结构** | 链式 / 平面并行 | **带分层并发 + 路由的 DAG** |
 | **中间结果** | 在你的上下文窗口中 | **在运行时中——不在你的上下文里** |
 | **规模** | 少量任务 | **动态 `map` 并发分发，覆盖数十个项目** |
-| **可复用** | 每次重新描述 | **保存为 `/tf:<name>`** |
+| **可复用** | 每次重新描述 | **按名保存（Pi 上为 `/tf:<name>`；Codex 上用 `taskflow_run` 按名运行）** |
 | **可恢复** | ✗ | **✓ 跨会话（cross-session）——已缓存的阶段自动跳过** |
 | **质量门控** | ✗ | **`gate` 阶段，在 `VERDICT: BLOCK` 时停止** |
 | **条件路由** | ✗ | **`when` 守卫 + `join: any` 或连接（OR-join）** |
@@ -91,27 +95,29 @@ pi install npm:pi-taskflow
 
 ## 声明式图 vs 命令式脚本
 
-精神上最接近 `pi-taskflow` 的，是那种**动态 / code-mode 的 workflow**——模型写一段 JavaScript 编排脚本。它强大、且确实很有表达力。但它位于某个根本轴的*另一极*：**表达力 vs 可验证性。**
+精神上最接近 `taskflow` 的，是那种**动态 / code-mode 的 workflow**——模型写一段 JavaScript 编排脚本。它强大、且确实很有表达力。但它位于某个根本轴的*另一极*：**表达力 vs 可验证性。**
 
-| | 动态 `workflow`（code-mode） | **`pi-taskflow`**（声明式图） |
+| | 动态 `workflow`（code-mode） | **`taskflow`**（声明式图） |
 |---|---|---|
 | **计划是什么** | 模型书写并运行的命令式 JS | **运行时执行的声明式 JSON 数据** |
 | **那张图** | 隐式——藏在 `if`/`for`/`await` 控制流里 | **显式——`phases[]` + `dependsOn` 边，一等对象** |
 | **运行前验证** | ✗ 图灵完备；无法证明会终止 | **✓ 静态检查：无环、无死端、不超预算、无悬空引用** |
 | **看到它** | ✗ 图只在代码跑起来时存在 | **✓ 实时进度渲染*本身就是* DAG** |
 | **恢复** | 粗粒度（调用缓存去重） | **✓ 逐阶段输入哈希恢复，跨会话** |
-| **能否安全交给 LLM 生成** | 有风险——它是可执行代码 | **✓ 它只是数据——无 `eval`、无任意执行** |
+| **能否安全交给 LLM 生成** | 有风险——它是可执行代码 | **✓ 它只是数据——无 JavaScript `eval`、无任意执行** |
 | **表达力上限** | **更高**——任意控制流 | 受 DSL 限制（但 `map`/`when`/`loop`/`gate` 覆盖了大多数任务） |
 
 我们有意选了**可验证**的那一边。你放弃的表达力是真实的；但你换回的——一张能检查、能看、能重放、能安全交给模型书写的计划——才是把一次性提示变成持久编排的关键。
 
 ## 与其他 Pi 扩展的对比
 
-Pi 生态现在有 **20 多个委托、工作流和编排扩展**——每个在各自领域都很出色。以下是一份诚实的定位图（已对照每个包截至 2026 年 6 月的最新 npm 发布版核实）。完整的对比——每个包的优缺点——请参见 [`PI-ECOSYSTEM.md`](./PI-ECOSYSTEM.md)。更广泛的非 Pi 生态对比（LangGraph、Temporal、CrewAI、Mastra……）请参见 [`COMPETITORS.md`](./COMPETITORS.md)。
+> 本节为 **Pi 专属** ——它将 `pi-taskflow` 与 Pi 生态中的其他包对比。如果你在 Codex 上，可直接跳到[阶段类型](#阶段类型)；引擎与 DSL 完全相同。
+
+Pi 生态现在有 **20 多个委托、工作流和编排扩展**——每个在各自领域都很出色。以下是一份诚实的定位图（已对照每个包截至 2026 年 6 月的最新 npm 发布版核实）。完整的对比——每个包的优缺点——请参见 [`PI-ECOSYSTEM.md`](./docs/internal/PI-ECOSYSTEM.md)。更广泛的非 Pi 生态对比（LangGraph、Temporal、CrewAI、Mastra……）请参见 [`COMPETITORS.md`](./docs/internal/COMPETITORS.md)。
 
 | 扩展 | 模型 | 自定义 DSL | DAG | 动态并发分发 | 跨会话恢复 | 质量门控 | 人工审批 | 保存为命令 | 零依赖 |
 |---|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| **pi-taskflow** | **声明式多阶段 taskflow** | **✓** | **✓** | **✓ `map`** | **✓ phase-hash** | **✓** | **✓** | **✓ `/tf:<name>`** | **✓** |
+| **taskflow** | **声明式多阶段 taskflow** | **✓** | **✓** | **✓ `map`** | **✓ phase-hash** | **✓** | **✓** | **✓ `/tf:<name>`** | **✓** |
 | [`@pi-agents/orchid`](https://www.npmjs.com/package/@pi-agents/orchid) | 固定 9 阶段流水线 + Ralph 循环 | 固定 | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✕ (2) |
 | [`pi-crew`](https://www.npmjs.com/package/pi-crew) | 角色团队 + git worktree + 异步 | 部分 | ✓ | ✓ | ✓ | ✓ | ✓ | – | ✕ (7) |
 | [`ultimate-pi`](https://www.npmjs.com/package/ultimate-pi) | 受管制的 plan→execute→review 框架 | YAML 合约 | ✓（规划时） | ✕ | ✓ | ✓（3 级） | ✓ | ✓ | ✕ (16) |
@@ -122,20 +128,22 @@ Pi 生态现在有 **20 多个委托、工作流和编排扩展**——每个在
 | [`pi-pipeline`](https://www.npmjs.com/package/pi-pipeline) | 固定 SPEC→PLAN→TASKS→VERIFY | ✕ | 固定 | ✕ | 会话内规划 | ✓ | clarify | ✕ | ✕ (2) |
 | [`pi-agent-flow`](https://www.npmjs.com/package/pi-agent-flow) | 一次性并行专业 `fork` | 是 | ✕ | ✕ | – | ✕ | ✕ | – | ✕ (2) |
 
-*（20 多个扩展的代表性切片——完整列表及 `@0xkobold/pi-orchestration`、`@melihmucuk/pi-crew`、`@mediadatafusion/pi-workflow-suite`、`gentle-pi`、`@dreki-gg/pi-subagent` 等请参见 [`PI-ECOSYSTEM.md`](./PI-ECOSYSTEM.md)。）*
+*（20 多个扩展的代表性切片——完整列表及 `@0xkobold/pi-orchestration`、`@melihmucuk/pi-crew`、`@mediadatafusion/pi-workflow-suite`、`gentle-pi`、`@dreki-gg/pi-subagent` 等请参见 [`PI-ECOSYSTEM.md`](./docs/internal/PI-ECOSYSTEM.md)。）*
 
 **如何选择：**
 
-- **`@pi-agents/orchid`** 是生态中功能最完整的编排器（DAG + worktree + Ralph 循环 + 代理邮箱）——但其 DSL 是*固定*的 9 阶段流水线，携带运行时依赖 + jiti，且处于 beta 阶段。当你想**定义自己的图结构**（而非采用别人的固定观点），并且追求**零依赖**和一条命令安装时，选 `pi-taskflow`。
+- **`@pi-agents/orchid`** 是生态中功能最完整的编排器（DAG + worktree + Ralph 循环 + 代理邮箱）——但其 DSL 是*固定*的 9 阶段流水线，携带运行时依赖 + jiti，且处于 beta 阶段。当你想**定义自己的图结构**（而非采用别人的固定观点），并且追求**零依赖**和一条命令安装时，选 `taskflow`。
 - **`pi-crew` / `ultimate-pi`** 更重——worktree 隔离、持久的异步团队、多层治理。如果你想要轻量、声明式、零依赖，那就选本项目。
-- **`@zhushanwen/pi-workflow`** 精神上最为接近，也是零依赖，但它站在上述分水岭的**命令式**那一边：你要以模型书写并运行的 **JavaScript 脚本**来编写工作流。`pi-taskflow` 的**声明式 JSON DAG** 是可验证的那一边——可静态检查、可可视化、可安全交给 LLM 生成，且恢复粒度精细到阶段级别而非调用缓存去重。
-- **`@fiale-plus/pi-rogue-orchestration`** 拥有真正的**循环至完成**（`pi-taskflow` 尚不具备的功能）。如果你的任务是"一直做直到目标达成"，它值得一看；而 `pi-taskflow` 适用于*结构化、分支式的*流水线。
-- **`pi-subagents` / `@gotgenes/pi-subagents`** 是即席"用 reviewer 审查这个 diff"委托和后台作业的成熟选择。`pi-taskflow` 则适用于当这些委托需要变成*可重复、可恢复的流水线*时。
-- **`pi-pipeline` / `pi-agent-flow`** 提供的是*固定观点、固定结构*的流程。`pi-taskflow` 提供的是*一张空白画布*：你（或模型）声明适合任务的图结构。
+- **`@zhushanwen/pi-workflow`** 精神上最为接近，也是零依赖，但它站在上述分水岭的**命令式**那一边：你要以模型书写并运行的 **JavaScript 脚本**来编写工作流。`taskflow` 的**声明式 JSON DAG** 是可验证的那一边——可静态检查、可可视化、可安全交给 LLM 生成，且恢复粒度精细到阶段级别而非调用缓存去重。
+- **`@fiale-plus/pi-rogue-orchestration`** 拥有真正的**循环至完成**（目标驱动的迭代）。`taskflow` 现在也自带 `loop` 阶段（v0.0.13+）加上竞争选择的 `tournament`——而且与 rogue-orchestration 不同，`taskflow` 拥有带门控、可组合子流程和跨会话恢复的完整 DAG。若只需极少结构的“一直做直到目标达成”，rogue-orchestration 更轻；若需结构化、分支式的流水线，`taskflow` 覆盖同样的能力且更多。
+- **`pi-subagents` / `@gotgenes/pi-subagents`** 是即席"用 reviewer 审查这个 diff"委托和后台作业的成熟选择。`taskflow` 则适用于当这些委托需要变成*可重复、可恢复的流水线*时。
+- **`pi-pipeline` / `pi-agent-flow`** 提供的是*固定观点、固定结构*的流程。`taskflow` 提供的是*一张空白画布*：你（或模型）声明适合任务的图结构。
 
-> 诚实的一句话总结：**`pi-taskflow` 是唯一一个给你一张*声明式、可验证、可恢复*的任务节点 DAG 的 Pi 扩展——保存为一条单词命令，零运行时依赖，且从设计上就上下文隔离。** code-mode 的 workflow 让模型去*写脚本*跳动工作，`pi-taskflow` 则让它*声明一张运行时能在执行前证明其正确的图。*
+> 诚实的一句话总结：**`pi-taskflow` 是唯一一个给你一张*声明式、可验证、可恢复*的任务节点 DAG 的 Pi 扩展——保存为一条 `/tf:<name>` 命令，零运行时依赖，且从设计上就上下文隔离（同一引擎也通过 `taskflow_*` MCP 工具运行于 Codex）。** code-mode 的 workflow 让模型去*写脚本*跳动工作，`taskflow` 则让它*声明一张运行时能在执行前证明其正确的图。*
 
 ## 30 秒快速开始
+
+### 在 Pi 上
 
 **1. 安装**——一条命令：
 
@@ -156,6 +164,18 @@ pi install npm:pi-taskflow
 **3. 保存**——说一句 *"save it"*，你就永远拥有了 `/tf:<name>`。
 
 就这么简单。你可以在咖啡凉下来之前运行第一个工作流——无需编写任何阶段定义。
+
+<a id="run-it-on-your-agent"></a>
+### 在 Codex 上
+
+taskflow 以 Codex **插件（plugin）** 的形式发布——安装一次，`taskflow_*` MCP 工具与一个路由 skill 便会自动生效，无需手动 `mcp add`，也无需改配置：
+
+```bash
+codex plugin marketplace add heggria/taskflow
+codex plugin add taskflow@taskflow
+```
+
+插件通过 `npx`（`codex-taskflow`）声明其 MCP server，按需拉起，全局无需再装任何东西。随后只要让 Codex 执行多阶段或扇出任务，它就会调用这些工具。参见 [Codex 指南](./docs/codex-mcp.md)。
 
 ### 简写语法（与内置工具相同的格式）
 
@@ -180,7 +200,7 @@ pi install npm:pi-taskflow
 
 ## 看看它如何运行
 
-这不是模拟图。**这是真实运行的 stdout**——`self-improve` 流程会编写并验证自己的测试套件，被质量门控在中途捕获：
+这不是模拟图。**这是真实运行的 stdout（Pi TUI）**——`self-improve` 流程会编写并验证自己的测试套件，被质量门控在中途捕获：
 
 ```
 ⊗ taskflow self-improve  6/7 · blocked · $0.095
@@ -204,7 +224,7 @@ pi install npm:pi-taskflow
 
 ## 走向声明式
 
-简写语法是你的入口。DSL 才是 `pi-taskflow` 的真正价值所在——动态并发分发、结构化路由和质量门控。
+简写语法是你的入口。DSL 才是 `taskflow` 的真正价值所在——动态并发分发、结构化路由和质量门控。
 
 ### 并发分发与归约
 
@@ -305,7 +325,7 @@ pi install npm:pi-taskflow
 - **`when`**——除非表达式为真，否则跳过阶段。支持 `{refs}`、`== != < > <= >=`、`&& || !`、括号以及带引号的字符串/数字。配合合并阶段的 `join: "any"` 实现真正的 if/else 路由。解析错误**开放失败（fail open）**。
 - **`join: "any"`**——或连接：阶段在*一个*依赖完成后立即运行（默认 `"all"` 等待所有依赖）。
 - **`retry`**——`{ "max": 2, "backoffMs": 500, "factor": 2 }` 以固定或指数回退策略重试失败的子代理；使用量累加，尝试次数以 `↻N` 形式在 TUI 中显示。瞬态提供商错误（速率限制 / 5xx / 超时）**即使没有显式策略也会自动重试**；硬错误不会。
-- **`approval`**——暂停等待人工操作（批准 / 拒绝 / 编辑）。拒绝会中止流程；编辑会将输入内容作为阶段输出注入下游步骤。非交互式运行自动批准。
+- **`approval`**——暂停等待人工操作（批准 / 拒绝 / 编辑）。拒绝会中止流程；编辑会将输入内容作为阶段输出注入下游步骤。**非交互式/后台（detached）运行会自动拒绝**（approval 是安全边界，绝不静默绕过）。
 - **`flow`**——`{ "type": "flow", "use": "deep-research", "with": { "topic": "{item}" } }` 将保存的流程作为阶段运行（循环递归会被检测并拒绝）。
 
 ### 循环至完成（`loop`）
@@ -406,19 +426,20 @@ Review the audit below. If any endpoint is missing auth, end with
 
 ## 命令
 
-保存的流程变成 CLI 快捷方式。所有命令在 Pi 会话中运行：
+保存的流程变成 CLI 快捷方式。**这些 `/tf` 命令仅限 Pi**（在 Pi 会话中运行）。在 Codex 上改用 `taskflow_*` MCP 工具——`taskflow_list` / `taskflow_show` / `taskflow_run`（按 `name`）/ `taskflow_verify` / `taskflow_compile`。
 
 | 命令 | 功能 |
 |---|---|
 | `/tf list` | 列出所有已保存的流程 |
 | `/tf run <name> [args]` | 运行已保存的流程（例如 `/tf run summarize-files dir=src`） |
 | `/tf show <name>` | 打印流程的定义 |
-| `/tf runs` | 浏览近期运行历史（交互式 TUI） |
+| `/tf compile <name> [lr\|td]` | **将流程渲染为 Mermaid 图 + 验证报告** —— 0 token、无 LLM；可粘贴到 README/issue/PR |
+| `/tf runs` | 浏览近期运行历史（交互式 TUI——有运行活跃时**实时自动刷新**） |
 | `/tf resume <runId>` | 继续一个暂停/失败的运行——已缓存的阶段自动跳过 |
 | `/tf init` | **交互式映射模型角色**到你的已启用模型（写入 `~/.pi/agent/settings.json`） |
 | `/tf:<name> [args]` | 快捷方式——一键运行流程 |
 
-工具动作（由模型使用）：`run`（内联 `define` 或已保存的 `name`）、`save`、`resume`、`list`、`init`。
+工具动作（由模型在 Pi 上使用）：`run`（内联 `define` 或已保存的 `name`）、`save`、`resume`、`list`、`agents`、`init`、`verify`、`compile`、`ir`、`provenance`、`why-stale`、`recompute`、`cache-clear`。在 Codex 上暴露的 MCP 工具为 `taskflow_run` / `taskflow_list` / `taskflow_show` / `taskflow_verify` / `taskflow_compile`。
 
 ## 跨会话恢复
 
@@ -610,20 +631,20 @@ provided files. Report violations grouped by file. No fixes.
 
 <div align="center">
 
-**0 个运行时依赖** · **872 个测试** · **9 种阶段类型** · **共享上下文树** · **跨会话恢复** · **跨运行记忆化** · **逐项 map 缓存** · **增量重算** · **后台（detached）执行** · **`compile` Mermaid 渲染** · **~9k LOC 运行时**
+**0 个运行时依赖** · **897 个测试** · **9 种阶段类型** · **共享上下文树** · **跨会话恢复** · **跨运行记忆化** · **逐项 map 缓存** · **增量重算** · **后台（detached）执行** · **`compile` Mermaid 渲染** · **~9k LOC 运行时**
 
 </div>
 
 - **零运行时依赖。** 没有 `dependencies` 字段——运行时完全基于 Node 内置模块（`fs` / `path` / `os` / `child_process` / `crypto`）。文件锁是 `fs.openSync("wx")`，不是第三方库。
-- **872 个测试分布在 51 个测试文件中**，涵盖并发、原子文件锁定（8 进程竞争回归测试）、路径穿越防御、跨会话恢复、跨运行缓存新鲜度（流程/推理/工具键隔离、指纹失效、TTL/LRU 淘汰）、逐项 map 缓存、增量重算、FlowIR 编译接缝、门控判决、预算上限、重试/回退、审批流程、循环终止、锦标赛评判、子流程组合、共享上下文树、工作区隔离、后台执行、回调隔离、空闲看门狗、模型角色 init 配置，以及 `compile` Mermaid 渲染器。
+- **897 个测试分布在 51 个测试文件中**，涵盖并发、原子文件锁定（8 进程竞争回归测试）、路径穿越防御、跨会话恢复、跨运行缓存新鲜度（流程/推理/工具键隔离、指纹失效、TTL/LRU 淘汰）、逐项 map 缓存、增量重算、FlowIR 编译接缝、门控判决、预算上限、重试/回退、审批流程、循环终止、锦标赛评判、子流程组合、共享上下文树、工作区隔离、后台执行、回调隔离、空闲看门狗、模型角色 init 配置，以及 `compile` Mermaid 渲染器。
 - **经过强化的设计。** 路径穿越防御（词法 + `realpath`）、runId 验证、HTML/错误净化、原子写入、通过 `rename` 实现的过期锁窃取，以及杀死卡死子代理的空闲看门狗。
 - **自产自用（dogfooded）。** 每个新功能必须在发布前通过项目自身的 `self-improve` taskflow 的考验。
 
 ## 🍽️ 我们吃自己的狗粮
 
-`pi-taskflow` 中的每个功能都是**通过 `pi-taskflow` 自身**发布的。
+`taskflow` 中的每个功能都是**通过 `taskflow` 自身**发布的。
 
-我们的 `self-improve` 流程是一个 10 阶段 DAG——它审计代码库、修补缺陷、验证正确性、进行质量门控并展示报告——全部以声明式完成。它被保存为 `/tf:self-improve`，并在每次发布之前运行。Pi 生态中没有其他代理编排器用自身来构建自己。
+我们的 `self-improve` 流程是一个 10 阶段 DAG——它审计代码库、修补缺陷、验证正确性、进行质量门控并展示报告——全部以声明式完成。我们在发布前运行它（作为用户作用域的 `/tf:self-improve` 流程）。Pi 生态中没有其他代理编排器用自身来构建自己。
 
 | 活动 | 规模 | 阶段数 | 结果 |
 |----------|-------|--------|---------|
@@ -635,25 +656,25 @@ provided files. Report violations grouped by file. No fixes.
 | [第 2 轮对抗性审计](./docs/internal/dogfooding-report.md) | 逐阶段 DAG 执行——12 个发现覆盖 runner/runtime/interpolate/verify | 14 阶段 | 已修复 10 项，0 退化 |
 | [第 3 轮对抗性审计](./docs/internal/dogfooding-report.md) | 集成层 + 跨模块——10 个发现覆盖 index/agents/cache/render/runs-view | 9 阶段 | 已修复 10 项，0 退化 |
 
-> **元点评：** 我们使用了 `pi-taskflow` 的 `map` 并发分发、`gate` 判决、`approval` 人机协作、`tournament` best-of-N、`loop` 循环至完成和 `cross-run` 缓存——来构建 `pi-taskflow`。
+> **元点评：** 我们使用了 `taskflow` 的 `map` 并发分发、`gate` 判决、`approval` 人机协作、`tournament` best-of-N、`loop` 循环至完成和 `cross-run` 缓存——来构建 `taskflow`。
 
 ## 状态与边界
 
-**v0.1.1**——修复 issue #3：后台（detached）运行与前台运行现在都能真正执行阶段了（monorepo 拆分后丢失的子代理 runner 注入已补回，另有 detached-runner 模块解析修复与崩溃不再静默卡住的守卫）。详见 [CHANGELOG](./CHANGELOG.md)。本版本基线：**多宿主 monorepo**——引擎拆分为宿主无关的 `taskflow-core`，加上 `pi-taskflow`（Pi 适配器）与 `codex-taskflow`（Codex 运行器 + MCP 服务器）两个适配器。**共享上下文树**：可选开启（`shareContext` / `contextSharing`）的黑板 + 监督工具（`ctx_read`/`ctx_write` 水平复用、`ctx_report`/`ctx_spawn` 垂直监督）。**工作区隔离**：阶段的 `cwd` 接受保留关键字 `temp`/`dedicated`/`worktree`，运行时分配隔离目录（或一条一次性分支上的 git worktree）并在阶段结束后拆除。**后台（detached）执行**：运行可脱离 Pi 会话后台执行。早期功能：循环至完成（`loop`）、锦标赛（best-of-N 带评判者）、跨运行记忆化（基于 git/文件/glob/环境指纹和 TTL 的内容寻址缓存）、交互式 `/tf init`、18 个内置代理及模型角色。完整的控制流与可靠性层（`when` 守卫、`join: any`、`retry`/回退、`approval`、`flow` 组合、`budget` 上限、`eval` 机器门控、空闲看门狗）构建在 DSL + DAG 运行时（`agent`/`parallel`/`map`/`gate`/`reduce`）之上。支持内联 + 已保存流程、跨会话恢复、实时进度和上下文隔离。一次运行作为一个流式工具调用执行。
+**v0.1.3**——当前发布版。完整历史（含修复 issue #3 执行问题的 v0.1.1）详见 [CHANGELOG](./CHANGELOG.md)。本版新增 Codex MCP `taskflow_compile` 的 SVG 图表，以及针对 `validate`/`verify`/`compile` 的全面畸形输入加固。基线：**多宿主 monorepo**——引擎拆分为宿主无关的 `taskflow-core`，加上 `pi-taskflow`（Pi 适配器）与 `codex-taskflow`（Codex 运行器 + MCP 服务器 + 即插即用的 Codex 插件）。**共享上下文树**：可选开启（`shareContext` / `contextSharing`）的黑板 + 监督工具（`ctx_read`/`ctx_write` 水平复用、`ctx_report`/`ctx_spawn` 垂直监督）。**工作区隔离**：阶段的 `cwd` 接受保留关键字 `temp`/`dedicated`/`worktree`，运行时分配隔离目录（或一条一次性分支上的 git worktree）并在阶段结束后拆除。**后台（detached）执行**：运行可脱离会话后台执行。早期功能：循环至完成（`loop`）、锦标赛（best-of-N 带评判者）、跨运行记忆化（基于 git/文件/glob/环境指纹和 TTL 的内容寻址缓存）、交互式 `/tf init`、18 个内置代理及模型角色。完整的控制流与可靠性层（`when` 守卫、`join: any`、`retry`/回退、`approval`、`flow` 组合、`budget` 上限、`eval` 机器门控、空闲看门狗）构建在 DSL + DAG 运行时（`agent`/`parallel`/`map`/`gate`/`reduce`）之上。支持内联 + 已保存流程、跨会话恢复、实时进度和上下文隔离。一次运行作为一个流式工具调用执行。
 
 已知边界（已追踪、有限定——不会在流程中途出现意外）：
 
 - **共享上下文需显式开启。** 除非阶段设置 `shareContext`（或流程设置 `contextSharing`），子代理不共享任何内容。黑板为每次运行独立、基于文件、大小受限，并随运行清理。派生嵌套上限为 `MAX_DYNAMIC_NESTING`（5）。
 - **工作区隔离是 fail-open 的。** `cwd: "worktree"` 要求基底 cwd 是一个 git 工作树；否则降级为 `temp` 目录（带警告）。保留关键字仅在作者编写的流程中生效。
 - **无 `output: "file"`。** 输出只能是文本/JSON——通过代理的 `write` 工具调用写入文件。
-- **`map` 需要一个 JSON 数组。** `over` 字段必须解析为 `{steps.ID.json}` 数组。先用一个单代理 `output: "json"` 阶段包装文本列表。
+- **`map` 基于一个字符串 `over` 展开出 JSON 数组。** `over` 字段是一个字符串，它要么插值解析为 JSON 数组（例如 `{steps.ID.json}`），要么本身就是一个 JSON 数组字符串。先用一个单代理 `output: "json"` 阶段包装纯文本列表，或对固定列表传入 `JSON.stringify([...])`。（直接写字面量数组会被拒绝——请从某个阶段产出它并引用之。）
 - **DAG 必须是无环的。** 循环会在验证时被拒绝。
 - **跨运行缓存不包含 `gate`、`approval`、`loop` 和 `tournament`。** 这些阶段每次运行必须产生新结果。
 - **审批在后台模式下自动拒绝。** 这是一项安全不变量——审批门控绝不会被静默绕过。
 
 ## 开发
 
-`pi-taskflow` 是一个 npm-workspaces monorepo，包含三个发布包：
+`taskflow` 是一个 npm-workspaces monorepo，包含三个发布包：
 
 | 包 | 角色 |
 |----|------|
@@ -681,7 +702,7 @@ node --conditions=development --experimental-strip-types packages/pi-taskflow/te
 
 ## 贡献
 
-欢迎贡献——这是一个年轻、快速发展的项目。在 [GitHub](https://github.com/heggria/pi-taskflow) 上提交 issue 或 PR。适合初学者的贡献内容包括：新的示例流程、阶段类型创意和 TUI 打磨。
+欢迎贡献——这是一个年轻、快速发展的项目。在 [GitHub](https://github.com/heggria/taskflow) 上提交 issue 或 PR。适合初学者的贡献内容包括：新的示例流程、阶段类型创意和 TUI 打磨。
 
 ## 许可
 

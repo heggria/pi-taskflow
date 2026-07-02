@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "taskflow": {
+      "command": "npx",
+      "args": ["-y", "-p", "codex-taskflow@0.1.3", "codex-taskflow-mcp"],
+      "tool_timeout_sec": 1800
+    }
+  }
+}

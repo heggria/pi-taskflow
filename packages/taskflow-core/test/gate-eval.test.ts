@@ -103,9 +103,71 @@ test("eval gate: any eval fails → LLM gate runs", async () => {
 	assert.equal(state.phases["check"]?.gate?.verdict, "block");
 });
 
-// ---------------------------------------------------------------------------
-// onBlock:retry
-// ---------------------------------------------------------------------------
+test("eval gate: an unresolved `contains` ref does NOT auto-pass — LLM gate runs", async () => {
+	// A typo'd / not-yet-produced ref must fail-safe: the placeholder must not
+	// coincidentally satisfy (or bypass) the check and skip the safety gate.
+	const def = {
+		name: "eval-missing-ref",
+		phases: [
+			{ id: "prod", type: "agent", task: "produce PASS" },
+			{
+				id: "check",
+				type: "gate",
+				task: "is this good?",
+				dependsOn: ["prod"],
+				eval: ["{steps.does-not-exist.output} contains PASS"],
+			},
+		],
+	};
+	const state: RunState = mkState(def, "eval-missing-m1");
+	let gateCalled = false;
+	const deps: RuntimeDeps = {
+		cwd: "/tmp",
+		agents: [dummyAgent],
+		runTask: async (_cwd, _agents, _an, task) => {
+			if (task.includes("is this good?")) {
+				gateCalled = true;
+				return mockRunResult("VERDICT: PASS");
+			}
+			return mockRunResult(task);
+		},
+	};
+	await executeTaskflow(state, deps);
+	assert.equal(gateCalled, true, "a missing ref must fall through to the LLM gate, not auto-pass");
+});
+
+test("eval gate: an unparseable eval does NOT auto-pass — LLM gate runs", async () => {
+	// evaluateCondition fails open (returns true) on a parse error; the gate eval
+	// path must instead fail-safe and run the LLM gate.
+	const def = {
+		name: "eval-parse-err",
+		phases: [
+			{ id: "prod", type: "agent", task: "produce PASS" },
+			{
+				id: "check",
+				type: "gate",
+				task: "is this good?",
+				dependsOn: ["prod"],
+				eval: ["{steps.prod.output} >== broken"],
+			},
+		],
+	};
+	const state: RunState = mkState(def, "eval-parse-m1");
+	let gateCalled = false;
+	const deps: RuntimeDeps = {
+		cwd: "/tmp",
+		agents: [dummyAgent],
+		runTask: async (_cwd, _agents, _an, task) => {
+			if (task.includes("is this good?")) {
+				gateCalled = true;
+				return mockRunResult("VERDICT: PASS");
+			}
+			return mockRunResult(task);
+		},
+	};
+	await executeTaskflow(state, deps);
+	assert.equal(gateCalled, true, "an unparseable eval must fall through to the LLM gate, not auto-pass");
+});
 
 test("onBlock:retry — gate blocks, upstream+gate re-execute once", async () => {
 	const calls: string[] = [];

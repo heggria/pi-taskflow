@@ -16,11 +16,12 @@
  *   - taskflow_list    : list saved flows discoverable in this cwd
  *   - taskflow_show    : show a saved flow's definition
  *   - taskflow_verify  : statically verify a flow (no execution)
- *   - taskflow_compile : render a flow as a Mermaid diagram + verify report
+ *   - taskflow_compile : render a flow as a DAG diagram (SVG image) + status line
  */
 
 import { RpcError, RPC, serveStdio, type RpcHandler } from "./jsonrpc.ts";
 import { codexSubagentRunner } from "../codex-runner.ts";
+import { renderFlowSvg, renderFlowOutline, svgToBase64 } from "./svg.ts";
 import {
 	discoverAgents,
 	executeTaskflow,
@@ -35,10 +36,11 @@ import {
 	type RuntimeDeps,
 	type RunState,
 	type Taskflow,
+	type VerificationIssue,
 } from "taskflow-core";
 
 const PROTOCOL_VERSION = "2025-06-18";
-const SERVER_INFO = { name: "pi-taskflow", title: "pi-taskflow", version: "0.0.28" } as const;
+const SERVER_INFO = { name: "taskflow", title: "Taskflow", version: "0.1.3" } as const;
 
 /** An MCP tool definition as returned by tools/list. */
 interface McpTool {
@@ -48,9 +50,91 @@ interface McpTool {
 	inputSchema: Record<string, unknown>;
 }
 
-/** MCP tools/call content block (text only — sufficient for our outputs). */
+/**
+ * MCP tools/call result with a single text block.
+ *
+ * IMPORTANT (Codex rendering): the Codex desktop app renders a `text` content
+ * block as a fixed grey "plaintext" <pre> box — it does NOT parse markdown or
+ * highlight code, wraps on whitespace, and caps the box at ~192px tall with an
+ * inner scroll. So text here is written as *plain text*: no ```fences```, no
+ * markdown tables, conclusion-first, and near-duplicate lines collapsed. Rich
+ * rendering (structuredContent/_meta) is gated to Codex's first-party "Apps"
+ * server, so third-party MCP output can't opt into it. See docs/codex-mcp.md.
+ */
 function textContent(text: string, isError = false) {
 	return { content: [{ type: "text", text }], isError };
+}
+
+/** An MCP `image` content block, optionally followed by text blocks. Codex's
+ *  desktop app renders the image as `<img src="data:…">` (an inline SVG shows as
+ *  a real diagram) and shows the trailing text as a caption. The CLI/TUI can't
+ *  render images — it prints a bare `<image content>` placeholder — so the
+ *  trailing text MUST be self-sufficient there (and for vision-less models). */
+function imageContent(base64: string, mimeType: string, texts: string[], isError = false) {
+	const content: Array<Record<string, unknown>> = [{ type: "image", data: base64, mimeType }];
+	for (const t of texts) if (t) content.push({ type: "text", text: t });
+	return { content, isError };
+}
+
+/**
+ * Collapse near-identical validation messages so N phases hitting the same rule
+ * render as one line with a count instead of N wall-of-text repeats (the exact
+ * ugliness this file is fighting). Strips a leading `Phase '<id>': ` / `Phase
+ * '<id>' ` prefix, groups by the remaining message, and lists the affected ids.
+ */
+function dedupeMessages(msgs: string[]): string[] {
+	const groups = new Map<string, string[]>();
+	const order: string[] = [];
+	for (const raw of msgs) {
+		const m = raw.match(/^Phase '([^']+)':?\s+(.*)$/s);
+		const key = m ? m[2] : raw;
+		const id = m ? m[1] : "";
+		if (!groups.has(key)) {
+			groups.set(key, []);
+			order.push(key);
+		}
+		if (id) groups.get(key)!.push(id);
+	}
+	return order.map((key) => {
+		const ids = groups.get(key)!;
+		if (ids.length === 0) return key;
+		if (ids.length === 1) return `${key} (phase ${ids[0]})`;
+		const shown = ids.slice(0, 4).join(", ");
+		const more = ids.length > 4 ? ` +${ids.length - 4} more` : "";
+		return `${key} (${ids.length} phases: ${shown}${more})`;
+	});
+}
+
+/**
+ * Render verification issues as deduped, conclusion-friendly "Errors:" /
+ * "Warnings:" plaintext blocks. `extraErrors`/`extraWarnings` fold in the raw
+ * string messages from `validateTaskflow` so structural + quality issues share
+ * one deduped view. Shared by taskflow_verify and taskflow_compile's fallback.
+ */
+function issueBlocks(
+	issues: VerificationIssue[],
+	extraErrors: string[] = [],
+	extraWarnings: string[] = [],
+): { errorCount: number; warningCount: number; text: string } {
+	const toStr = (i: VerificationIssue) =>
+		// verifyTaskflow messages already embed the phase id in prose ("Phase 'x'
+		// is a terminal phase…"); only prepend the id for messages that don't, so
+		// dedupeMessages can strip one consistent prefix and collapse same-rule hits.
+		i.phaseId && !/^Phase '/.test(i.message) ? `Phase '${i.phaseId}': ${i.message}` : i.message;
+	const rawErrors = [...extraErrors, ...issues.filter((i) => i.severity === "error").map(toStr)];
+	const rawWarnings = [...extraWarnings, ...issues.filter((i) => i.severity === "warning").map(toStr)];
+	// Count reflects the true number of issues; the lines below are the *deduped*
+	// compact view (N same-rule hits collapse to one line + a phase list).
+	const errors = dedupeMessages(rawErrors);
+	const warnings = dedupeMessages(rawWarnings);
+	const errBlock = errors.length ? `\n\nErrors:\n${errors.map((e) => `- ${e}`).join("\n")}` : "";
+	const warnBlock = warnings.length ? `\n\nWarnings:\n${warnings.map((w) => `- ${w}`).join("\n")}` : "";
+	return { errorCount: rawErrors.length, warningCount: rawWarnings.length, text: `${errBlock}${warnBlock}` };
+}
+
+/** Pluralize a count for a compact status line. */
+function count(n: number, noun: string): string {
+	return `${n} ${noun}${n === 1 ? "" : "s"}`;
 }
 
 const TOOLS: McpTool[] = [
@@ -103,7 +187,7 @@ const TOOLS: McpTool[] = [
 	{
 		name: "taskflow_compile",
 		title: "Compile a taskflow to a diagram",
-		description: "Render a flow as a Mermaid flowchart + a static verification report (markdown). No execution. Provide `name` or `define`.",
+		description: "Render a flow's DAG as a diagram (an inline SVG image) with issues overlaid (red=error, amber=warning, green=final), plus a compact status line. No execution. Provide `name` or `define`.",
 		inputSchema: {
 			type: "object",
 			additionalProperties: false,
@@ -170,8 +254,8 @@ export function makeToolHandlers(cwd: string): Record<string, (args: Record<stri
 
 			const res = await executeTaskflow(state, deps);
 			const header = res.ok ? "✓ taskflow complete" : "✗ taskflow did not fully succeed";
-			const usage = res.totalUsage;
-			const usageLine = `\n\n— usage: ${usage.turns} turns, in ${usage.input}, out ${usage.output}`;
+			const u = res.totalUsage;
+			const usageLine = `\n\n— ${u.turns} turns · in ${u.input} · out ${u.output} tokens`;
 			return textContent(`${header}\n\n${res.finalOutput}${usageLine}`, !res.ok);
 		},
 
@@ -186,33 +270,86 @@ export function makeToolHandlers(cwd: string): Record<string, (args: Record<stri
 			const name = String(args.name ?? "");
 			const saved = getFlow(cwd, name);
 			if (!saved) return textContent(`No saved flow named "${name}".`, true);
-			return textContent("```json\n" + JSON.stringify(saved.def, null, 2) + "\n```");
+			// No ```json``` fence: Codex shows text blocks as raw plaintext, so a fence
+			// would render as literal backticks. The JSON is already monospaced there.
+			return textContent(JSON.stringify(saved.def, null, 2));
 		},
 
 		taskflow_verify: async (args) => {
 			const def = resolveFlow(cwd, args);
-			// Two layers: validateTaskflow catches structural errors (cycles, missing
-			// deps, undefined refs); verifyTaskflow adds the deeper static-quality
-			// issues. Combine both so the tool matches the `/tf verify` behavior.
 			const val = validateTaskflow(def);
-			const result = verifyTaskflow(def as Parameters<typeof verifyTaskflow>[0]);
-			const errors = result.issues.filter((i) => i.severity === "error");
-			const warnings = result.issues.filter((i) => i.severity === "warning");
-			const passed = val.ok && result.ok && errors.length === 0;
-			const ok = passed ? "✓ verification PASSED" : "✗ verification FAILED";
-			const fmt = (i: { category: string; phaseId?: string; message: string }) =>
-				`- ${i.category}${i.phaseId ? ` [${i.phaseId}]` : ""}: ${i.message}`;
-			const valErrs = val.errors.length ? `\n\nErrors:\n- ${val.errors.join("\n- ")}` : "";
-			const errs = errors.length ? `${valErrs ? "" : "\n\nErrors:"}\n${errors.map(fmt).join("\n")}` : "";
-			const allWarn = [...val.warnings.map((w) => `- ${w}`), ...warnings.map(fmt)];
-			const warns = allWarn.length ? `\n\nWarnings:\n${allWarn.join("\n")}` : "";
-			return textContent(`${ok}${valErrs}${errs}${warns}`, !passed);
+			// verifyTaskflow iterates flow.phases and throws if it isn't an array
+			// (e.g. a missing `phases`). Only skip it in that unsafe case; otherwise
+			// run it so its static-quality warnings (e.g. terminal-not-final) still
+			// surface alongside validateTaskflow's structural errors.
+			const phasesIterable = Array.isArray((def as { phases?: unknown }).phases);
+			const result = phasesIterable
+				? verifyTaskflow(def as Parameters<typeof verifyTaskflow>[0])
+				: { ok: false, issues: [] as ReturnType<typeof verifyTaskflow>["issues"] };
+			const { errorCount, warningCount, text } = issueBlocks(result.issues, val.errors, val.warnings);
+			const passed = val.ok && result.ok && errorCount === 0;
+			// Conclusion-first (the plaintext box is short + scrolls): verdict + counts
+			// on line 1, deduped detail below.
+			const head = passed
+				? warningCount
+					? `✓ verification PASSED — ${count(warningCount, "warning")}`
+					: "✓ verification PASSED"
+				: `✗ verification FAILED — ${count(errorCount, "error")}, ${count(warningCount, "warning")}`;
+			return textContent(`${head}${text}`, !passed);
 		},
 
 		taskflow_compile: async (args) => {
 			const def = resolveFlow(cwd, args);
+			const val = validateTaskflow(def);
+			// compileTaskflow / verifyTaskflow / renderFlowSvg all assume phases is an
+			// array of objects that each have a string id (they iterate it and index
+			// id.replace(...)). A hard-malformed def (non-array phases, a phase missing
+			// its id) would throw, so when the shape isn't renderable we return the
+			// structured validation errors as text instead of rendering.
+			const phases = (def as { phases?: unknown }).phases;
+			const renderable =
+				Array.isArray(phases) && phases.every((p) => p != null && typeof (p as { id?: unknown }).id === "string");
+			if (!renderable) {
+				const { errorCount, warningCount, text } = issueBlocks([], val.errors, val.warnings);
+				const caption = `${def.name ?? "taskflow"} — ${count(errorCount, "error")} · ${count(warningCount, "warning")} · ✗ FAIL`;
+				return textContent(`${caption}${text}`, true);
+			}
+			// Merge structural validation into the compile report. compileTaskflow's
+			// own verification.ok is true even for a structurally-invalid (but
+			// renderable) flow, so a validate-clean check is what stops a false ✓ PASS.
+			// We still render the diagram + outline so such a flow can be inspected
+			// visually; truncate coerces non-string fields so the renderer won't throw.
 			const result = compileTaskflow(def);
-			return textContent(result.markdown, !result.verification.ok);
+			const v = result.verification;
+			const { errorCount, warningCount, text } = issueBlocks(v.issues, val.errors, val.warnings);
+			const passed = val.ok && v.ok && errorCount === 0;
+			const status = passed ? "✓ PASS" : "✗ FAIL";
+			const caption = `${def.name ?? "taskflow"} — ${count(def.phases?.length ?? 0, "phase")} · ${count(errorCount, "error")} · ${count(warningCount, "warning")} · ${status}`;
+			// A text outline that stands on its own — the CLI/TUI can't render images
+			// (it shows a bare `<image content>` placeholder), and a vision-less model
+			// would otherwise see nothing. Includes the layered DAG + deduped issues.
+			const outline = renderFlowOutline(def, v);
+			const textReport = `${caption}\n\n${outline}${text}`;
+			// Fold validation errors into the issue set the SVG colors by, so node
+			// coloring matches the text report (a phase with only a validation error
+			// still shows red). Validation messages start with `Phase '<id>':`.
+			const mergedVerification = {
+				...v,
+				ok: passed,
+				issues: [
+					...v.issues,
+					...val.errors.map((message) => {
+						const m = /^Phase '([^']+)'/.exec(message);
+						return { phaseId: m?.[1], message, severity: "error" as const, category: "ref-integrity" as const };
+					}),
+				],
+			};
+			// Desktop app: the SVG image renders as a real diagram; the outline rides
+			// along as its caption/fallback. Oversized graphs skip the image and rely
+			// on the text report alone.
+			const svg = renderFlowSvg(def, mergedVerification);
+			if (svg) return imageContent(svgToBase64(svg), "image/svg+xml", [textReport], !passed);
+			return textContent(textReport, !passed);
 		},
 	};
 }

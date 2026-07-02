@@ -1,6 +1,90 @@
 # Changelog
 
-All notable changes to pi-taskflow are documented here. This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
+All notable changes to taskflow are documented here. This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
+
+## [0.1.3] — 2026-07-02
+
+### Added
+- **Codex MCP `taskflow_compile` renders an inline SVG diagram.** It now emits a
+  hand-rendered SVG of the flow DAG so the Codex desktop app shows a real diagram
+  instead of a bare `<image content>` placeholder; a layered text outline rides
+  along as the caption/fallback for the CLI/TUI and vision-less models. Oversized
+  graphs skip the image and fall back to text. Injection-safe: all rendered text
+  is XML-escaped and the renderer is total (never throws on malformed input).
+  Isolated to the `codex-taskflow` adapter — core's Mermaid `compile` artifact is
+  unchanged (`taskflow_run` / `taskflow_verify` return text only).
+
+### Fixed
+- **Eval gates could silently auto-PASS on an unresolved ref or parse error.** A
+  `contains` check with a missing `{steps.*}` LHS, or any eval with a parse
+  error, used to skip the LLM gate (`evaluateCondition` fails open with `true`).
+  Both now fail-safe — a missing ref or unparseable eval falls through to the LLM
+  gate instead of bypassing the safety check.
+- **A `map` phase with a literal-array `over` crashed the whole run** with
+  `over.match is not a function`. The map runtime assumed `over` was always a
+  string interpolation ref (e.g. `{steps.scan.json}`) and called `.match()` on
+  it. Two-layer fix: `validateTaskflow` now rejects a non-string `over` up front
+  with an actionable message (emit the list from an upstream phase and reference
+  its `.json`), and `directRef` guards against non-string input so the runtime
+  fails a phase gracefully instead of throwing even if validation is bypassed.
+- **Codex MCP tools threw or false-passed on malformed input.** `taskflow_verify`
+  crashed (`phases is not iterable`) on a missing `phases`; `taskflow_compile`
+  false-passed an empty flow (`✓ PASS`) and crashed on a non-string `map.over` or
+  a phase missing its `id`. Both tools now validate first and return a structured
+  `✗ FAIL` (still rendering a diagram for a renderable-but-invalid flow so it can
+  be debugged), and the SVG `truncate` helper coerces non-string fields so the
+  renderer can never throw. Hardening was extended to the full class of
+  JSON-valid-but-malformed inputs: non-string `id`/`task`/`agent`/`when`, `null`
+  or non-object phase elements, non-string gate `eval` entries, malformed
+  `cache`/`cache.fingerprint`, and non-object `branches` entries all return a
+  structured validation error instead of throwing, and every diagram renderer
+  (Mermaid + SVG + text outline) is total against a non-array `phases`.
+- **Static verification ignored `reduce.from` edges.** `verify.ts` built its
+  successor / terminal / connectivity graphs from `dependsOn` only, so a phase
+  feeding a reduce solely via `from` was falsely flagged terminal/dead-end and
+  the reduce falsely flagged unreachable — contradicting the runtime and the
+  compile outline, which use `dependenciesOf` (`dependsOn ∪ from`). All graph
+  helpers now use `dependenciesOf`.
+- **Broken install contract on Node 22.0–22.18.** `engines.node` was `>=22` on
+  all packages, but the locked Pi SDK requires `>=22.19.0`; with
+  `engine-strict=true` that meant a hard install failure once the Pi deps were
+  reached. Bumped all four `engines.node` to `>=22.19.0` to match the real floor.
+
+### Changed
+- **The Codex plugin pins the MCP package version it launches.** `.mcp.json` now
+  runs `npx -y -p codex-taskflow@<version>` (was unpinned), so the installed
+  plugin version binds the exact code executed. The publish workflow verifies the
+  pin (and `plugin.json`'s version) equals the release tag.
+- **CI matured for the multi-host monorepo.** Node `22`/`24` test matrix,
+  cross-platform `npm install`, a `build` (dist-emit) job, the network-free Codex
+  MCP e2e suites (stdio handshake + comprehensive rendering/injection), CodeQL,
+  Dependabot, and least-privilege permissions.
+- **Rebrand: `pi-taskflow` → taskflow.** The project is now presented as a
+  host-neutral, multi-host orchestration runtime (Pi **and** Codex), not a
+  Pi-only extension. GitHub repo renamed `heggria/pi-taskflow` →
+  `heggria/taskflow`; all docs, badges, hero/social images, and the 6 i18n
+  READMEs updated. **npm package names are unchanged** (`taskflow-core`,
+  `pi-taskflow`, `codex-taskflow`) and the `pi-taskflow` package keeps its
+  `pi-*` keywords + `pi` manifest field, so Pi package indexing and
+  `pi install npm:pi-taskflow` are unaffected.
+- MCP `serverInfo` now reports `taskflow` / `0.1.3` (was `pi-taskflow` /
+  `0.0.28`).
+
+### Added
+- **Codex plugin** (`packages/codex-taskflow/plugin/`) for zero-config,
+  plug-and-play install: `codex plugin marketplace add heggria/taskflow` then
+  `codex plugin add taskflow@taskflow`. Ships a `.codex-plugin/plugin.json`
+  manifest, a `.mcp.json` that launches the MCP server via `npx codex-taskflow`
+  (no separate global install), and a routing `SKILL.md` so Codex reaches for the
+  `taskflow_*` tools on multi-phase / fan-out work automatically. A repo-root
+  `.claude-plugin/marketplace.json` makes the plugin discoverable.
+- **`tool_timeout_sec: 1800` in the Codex plugin's `.mcp.json`.** Codex applies a
+  per-server MCP tool-call timeout; when unset the plugin inherited Codex's
+  (short) default, so a long multi-phase `taskflow_run` — which returns only
+  after the whole DAG finishes — could be abandoned client-side while the run
+  kept executing server-side. The plugin now ships a 30-minute default so large
+  flows aren't cut off. Override per machine in `~/.codex/config.toml` under
+  `[mcp_servers.taskflow]` if you need more or less.
 
 ## [0.1.2] — 2026-06-30
 
