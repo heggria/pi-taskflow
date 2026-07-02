@@ -15,6 +15,11 @@ All notable changes to taskflow are documented here. This project follows [Keep 
   unchanged (`taskflow_run` / `taskflow_verify` return text only).
 
 ### Fixed
+- **Eval gates could silently auto-PASS on an unresolved ref or parse error.** A
+  `contains` check with a missing `{steps.*}` LHS, or any eval with a parse
+  error, used to skip the LLM gate (`evaluateCondition` fails open with `true`).
+  Both now fail-safe — a missing ref or unparseable eval falls through to the LLM
+  gate instead of bypassing the safety check.
 - **A `map` phase with a literal-array `over` crashed the whole run** with
   `over.match is not a function`. The map runtime assumed `over` was always a
   string interpolation ref (e.g. `{steps.scan.json}`) and called `.match()` on

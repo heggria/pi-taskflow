@@ -1062,6 +1062,13 @@ async function executePhaseInner(
 					const lhs = expr.slice(0, containsIdx).trim();
 					const rhs = expr.slice(containsIdx + " contains ".length).trim();
 					const lhsVal = interpolate(lhs, evalCtx);
+					// An unresolved LHS ref (e.g. a typo'd or not-yet-produced step) must NOT
+					// silently auto-PASS the gate — that would skip a safety check. Treat a
+					// missing ref as a failed eval so the LLM gate runs (fail-safe).
+					if (lhsVal.missing.length > 0) {
+						allPassed = false;
+						break;
+					}
 					const lhsStr = lhsVal.text;
 					if (!lhsStr.includes(rhs)) {
 						allPassed = false;
@@ -1069,7 +1076,11 @@ async function executePhaseInner(
 					}
 					continue;
 				}
-				if (!evaluateCondition(expr, evalCtx)) {
+				// A parse error must NOT auto-PASS the safety gate (evaluateCondition
+				// fails open with `true`). Treat an unparseable/false eval as a failed
+				// check so the LLM gate runs (fail-safe).
+				const { value: passed, error: evalErr } = tryEvaluateCondition(expr, evalCtx);
+				if (evalErr || !passed) {
 					allPassed = false;
 					break;
 				}

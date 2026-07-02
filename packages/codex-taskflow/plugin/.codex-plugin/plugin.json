@@ -23,7 +23,7 @@
   "interface": {
     "displayName": "Taskflow",
     "shortDescription": "Declarative multi-phase subagent workflows",
-    "longDescription": "Use Taskflow to orchestrate multi-phase subagent work as a declarative DAG: fan out over many items, route conditionally, guard quality with gates, iterate with loops and tournaments, pause for human approval, and resume across sessions — while intermediate transcripts stay in the runtime and only the final result returns to your context.",
+    "longDescription": "Use Taskflow to orchestrate multi-phase subagent work as a declarative DAG: fan out over many items, route conditionally, guard quality with gates, and iterate with loops and tournaments — while intermediate transcripts stay in the runtime and only the final result returns to your context.",
     "developerName": "heggria",
     "category": "Developer Tools",
     "capabilities": [

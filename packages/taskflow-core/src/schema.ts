@@ -542,7 +542,7 @@ export function validateTaskflow(def: unknown, opts: ValidationOptions = {}): Va
 		// verify/compile/collectRefs downstream) iterate these; a non-array is
 		// reported as a structured error here. The iteration sites use asArray() so
 		// a bad value degrades to [] instead of throwing "not iterable".
-		for (const key of ["dependsOn", "from", "branches", "eval", "context"] as const) {
+		for (const key of ["dependsOn", "from", "branches", "eval", "context", "tools"] as const) {
 			const v = (p as Record<string, unknown>)[key];
 			if (v !== undefined && !Array.isArray(v)) {
 				errors.push(`Phase '${p.id}': '${key}' must be an array, got ${typeof v}`);
@@ -590,6 +590,14 @@ export function validateTaskflow(def: unknown, opts: ValidationOptions = {}): Va
 					errors.push(`Phase '${p.id}': branches[${i}] must be an object with a 'task', got ${b === null ? "null" : typeof b}`);
 				else if (typeof (b as { task?: unknown }).task !== "string")
 					errors.push(`Phase '${p.id}': branches[${i}].task must be a string`);
+			});
+		}
+		// tools entries are matched against a Set by the adapters (t => set.has(t));
+		// a non-string entry would be silently ignored or misused, so reject it.
+		if (Array.isArray(p.tools)) {
+			p.tools.forEach((t, i) => {
+				if (typeof t !== "string")
+					errors.push(`Phase '${p.id}': tools[${i}] must be a string, got ${typeof t}`);
 			});
 		}
 
