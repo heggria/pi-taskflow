@@ -40,7 +40,7 @@ import {
 } from "taskflow-core";
 
 const PROTOCOL_VERSION = "2025-06-18";
-const SERVER_INFO = { name: "taskflow", title: "Taskflow", version: "0.1.2" } as const;
+const SERVER_INFO = { name: "taskflow", title: "Taskflow", version: "0.1.3" } as const;
 
 /** An MCP tool definition as returned by tools/list. */
 interface McpTool {

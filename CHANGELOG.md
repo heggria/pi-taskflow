@@ -2,7 +2,7 @@
 
 All notable changes to taskflow are documented here. This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 
-## [Unreleased]
+## [0.1.3] — 2026-07-02
 
 ### Added
 - **Codex MCP `taskflow_compile` renders an inline SVG diagram.** It now emits a
@@ -28,7 +28,12 @@ All notable changes to taskflow are documented here. This project follows [Keep 
   a phase missing its `id`. Both tools now validate first and return a structured
   `✗ FAIL` (still rendering a diagram for a renderable-but-invalid flow so it can
   be debugged), and the SVG `truncate` helper coerces non-string fields so the
-  renderer can never throw.
+  renderer can never throw. Hardening was extended to the full class of
+  JSON-valid-but-malformed inputs: non-string `id`/`task`/`agent`/`when`, `null`
+  or non-object phase elements, non-string gate `eval` entries, malformed
+  `cache`/`cache.fingerprint`, and non-object `branches` entries all return a
+  structured validation error instead of throwing, and every diagram renderer
+  (Mermaid + SVG + text outline) is total against a non-array `phases`.
 - **Static verification ignored `reduce.from` edges.** `verify.ts` built its
   successor / terminal / connectivity graphs from `dependsOn` only, so a phase
   feeding a reduce solely via `from` was falsely flagged terminal/dead-end and
@@ -57,7 +62,7 @@ All notable changes to taskflow are documented here. This project follows [Keep 
   `pi-taskflow`, `codex-taskflow`) and the `pi-taskflow` package keeps its
   `pi-*` keywords + `pi` manifest field, so Pi package indexing and
   `pi install npm:pi-taskflow` are unaffected.
-- MCP `serverInfo` now reports `taskflow` / `0.1.2` (was `pi-taskflow` /
+- MCP `serverInfo` now reports `taskflow` / `0.1.3` (was `pi-taskflow` /
   `0.0.28`).
 
 ### Added
