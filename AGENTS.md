@@ -84,6 +84,8 @@ tsconfig.base.json        ← shared compiler options; per-package tsconfig.buil
 - `when` — conditional guard (expression must be truthy)
 - `join` — `"all"` (default) or `"any"` (OR-join)
 - `retry` — `{max, backoffMs, factor}` with exponential backoff
+- `timeout` — per-subagent-call ms cap (agent-running phases); expiry aborts + fails with `timedOut`, never retried
+- `expect` — output contract for `output:"json"` phases (`{type, properties, required, items, enum}`); violation fails the phase, retryable via `retry`
 - `dependsOn` — DAG edges
 - `budget` — `{maxUSD, maxTokens}` run-wide cost ceiling
 

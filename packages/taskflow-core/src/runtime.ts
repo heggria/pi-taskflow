@@ -14,6 +14,7 @@ import * as path from "node:path";
 import * as fs from "node:fs";
 import type { AgentConfig } from "./agents.ts";
 import { coerceArray, evaluateCondition, interpolate, type InterpolationContext, safeParse, tryEvaluateCondition } from "./interpolate.ts";
+import { contractViolations } from "./contract.ts";
 import { isFailed, isTransientError, mapWithConcurrencyLimit } from "./runner-core.ts";
 import type { LiveUpdate, RunResult, SubagentRunner } from "./host/runner-types.ts";
 
@@ -181,6 +182,7 @@ function resultToPhaseState(id: string, r: RunResult, inputHash: string, parseJs
 		usage: r.usage,
 		model: r.model,
 		attempts: attempts > 1 ? attempts : undefined,
+		timedOut: r.phaseTimeout || undefined,
 		error: failed ? r.errorMessage || r.stderr || r.output : undefined,
 		inputHash,
 		endedAt: Date.now(),
@@ -398,6 +400,7 @@ function mergePhaseState(
 		usage,
 		model,
 		attempts: attempts > results.length ? attempts : undefined,
+		timedOut: ran.some((r) => r.phaseTimeout) || undefined,
 		budgetTruncated: budgetSkips.length > 0 || undefined,
 		subProgress: { done: ran.length, total: results.length, running: 0, failed: failedCount },
 		error: errors.length ? errors.join("; ") : undefined,
@@ -828,7 +831,7 @@ async function executePhaseInner(
 		preRead,
 	};
 
-	const baseRun = (agentName: string, task: string, onLive?: (l: LiveUpdate) => void, ctxNodeId?: string) =>
+	const baseRun = (agentName: string, task: string, onLive?: (l: LiveUpdate) => void, ctxNodeId?: string, signal?: AbortSignal) =>
 		run(
 			effCwd,
 			deps.agents,
@@ -839,7 +842,7 @@ async function executePhaseInner(
 				thinking: phase.thinking,
 				tools: phase.tools,
 				cwd: effCwd,
-				signal: deps.signal,
+				signal: signal ?? deps.signal,
 				onLive,
 				ctxDir: ctxDir,
 				nodeId: ctxDir ? ctxNodeId : undefined,
@@ -859,7 +862,13 @@ async function executePhaseInner(
 	const DEFAULT_TRANSIENT_RETRIES = 3;
 	const DEFAULT_TRANSIENT_BACKOFF_MS = 2000;
 	const DEFAULT_TRANSIENT_FACTOR = 2;
-	const runOne = async (agentName: string, task: string, onLive?: (l: LiveUpdate) => void, ctxNodeId?: string): Promise<RunResult> => {
+	// Per-phase timeout: caps EACH subagent call of an agent-running phase.
+	// (script phases enforce their own child-process timeout — see the script branch.)
+	const phaseTimeoutMs =
+		type !== "script" && typeof phase.timeout === "number" && Number.isFinite(phase.timeout) && phase.timeout >= 1000
+			? phase.timeout
+			: undefined;
+	const runOne = async (agentName: string, task: string, onLive?: (l: LiveUpdate) => void, ctxNodeId?: string, check?: (r: RunResult) => string[]): Promise<RunResult> => {
 		const explicitMax = Math.max(1, 1 + Math.max(0, Math.floor(retry?.max ?? 0)));
 		// Allow enough attempts to cover whichever policy applies on a given attempt.
 		const maxAttempts = Math.max(explicitMax, 1 + DEFAULT_TRANSIENT_RETRIES);
@@ -867,8 +876,61 @@ async function executePhaseInner(
 		let last: RunResult | undefined;
 		for (let attempt = 0; attempt < maxAttempts; attempt++) {
 			if (deps.signal?.aborted) break;
-			last = await baseRun(agentName, task, onLive, ctxNodeId);
+			// Phase timeout — an AbortController chained to the run's signal that also
+			// fires after `phase.timeout` ms. Deterministic: a timed-out call is never
+			// retried (retrying a call that just burned its full cap would double-spend).
+			let timedOut = false;
+			let timer: ReturnType<typeof setTimeout> | undefined;
+			let onParentAbort: (() => void) | undefined;
+			let callSignal: AbortSignal | undefined;
+			if (phaseTimeoutMs) {
+				const ac = new AbortController();
+				callSignal = ac.signal;
+				if (deps.signal?.aborted) ac.abort();
+				else if (deps.signal) {
+					onParentAbort = () => ac.abort();
+					deps.signal.addEventListener("abort", onParentAbort, { once: true });
+				}
+				timer = setTimeout(() => {
+					timedOut = true;
+					ac.abort();
+				}, phaseTimeoutMs);
+			}
+			try {
+				last = await baseRun(agentName, task, onLive, ctxNodeId, callSignal);
+			} finally {
+				if (timer) clearTimeout(timer);
+				if (onParentAbort) deps.signal?.removeEventListener("abort", onParentAbort);
+			}
+			if (timedOut) {
+				// Reclassify the abort as a phase timeout: a distinct, deterministic
+				// failure (stopReason "error" keeps it in the failed bucket; the
+				// phaseTimeout marker excludes it from transient retry).
+				last = {
+					...last,
+					exitCode: last.exitCode === 0 ? 1 : last.exitCode,
+					stopReason: "error",
+					errorMessage: `Phase timed out after ${phaseTimeoutMs}ms (subagent aborted)`,
+					phaseTimeout: true,
+				};
+				usages.push(last.usage);
+				break;
+			}
 			usages.push(last.usage);
+			// Output contract (`expect`): a successful attempt whose JSON output
+			// violates the declared contract is a failure — eligible for the phase's
+			// explicit retry policy (never the transient fallback).
+			if (check && !isFailed(last)) {
+				const violations = check(last);
+				if (violations.length > 0) {
+					last = {
+						...last,
+						exitCode: last.exitCode === 0 ? 1 : last.exitCode,
+						stopReason: "error",
+						errorMessage: `Output contract violated:\n- ${violations.join("\n- ")}`,
+					};
+				}
+			}
 			// B6: aggregate and surface cumulative usage before the retry decision,
 			// so the TUI / budget guard see the in-flight spend on every attempt.
 			const liveRetry = state.phases[phase.id];
@@ -919,6 +981,18 @@ async function executePhaseInner(
 	};
 
 	const parseJson = phase.output === "json";
+
+	// Output contract (`expect`): validates the parsed JSON output of a finished
+	// subagent call. Wired into `runOne` so a violation counts as a failed attempt
+	// (retryable under the phase's explicit `retry` policy).
+	const contractCheck =
+		phase.expect !== undefined && parseJson
+			? (r: RunResult): string[] => {
+					const parsed = safeParse(r.output);
+					if (parsed === undefined) return ["$: output is not valid JSON (contract could not be checked)"];
+					return contractViolations(parsed, phase.expect);
+				}
+			: undefined;
 
 	// Runs a list of sub-tasks with live fan-out progress + aggregate live usage/activity.
 	// `perItem` (map only) enables per-item cross-run caching: each item is looked
@@ -1112,7 +1186,7 @@ async function executePhaseInner(
 		const cached = cachedPhase(cc, ck);
 		if (cached) return cached;
 
-		const r = await runOne(agentName, fullTask, liveSink(state, phase.id, emitProgress), nodeIdFor());
+		const r = await runOne(agentName, fullTask, liveSink(state, phase.id, emitProgress), nodeIdFor(), contractCheck);
 		const ps = resultToPhaseState(phase.id, r, inputHash, parseJson);
 		if (readRefs.length) ps.reads = readRefsToReads(readRefs, state);
 		if (refWarning) ps.warnings = [...(ps.warnings ?? []), refWarning];
@@ -1169,7 +1243,7 @@ async function executePhaseInner(
 				const retryText = interpolate(phase.task ?? "", retryCtx).text;
 				const retryTask = preRead + retryText;
 				const retryIH = cacheKeys(cc, [phase.id, agentName, phase.model ?? "", retryTask]).key;
-				const retryR = await runOne(agentName, retryTask, liveSink(state, phase.id, emitProgress));
+				const retryR = await runOne(agentName, retryTask, liveSink(state, phase.id, emitProgress), undefined, contractCheck);
 				gatePs = resultToPhaseState(phase.id, retryR, retryIH, parseJson);
 				if (gatePs.status === "done") gatePs.gate = parseGateVerdict(retryR.output);
 				if (gatePs.gate?.verdict !== "block" || overBudget(state).over) break;
@@ -1292,6 +1366,7 @@ async function executePhaseInner(
 					error: result.timedOut
 						? `Script timed out after ${SCRIPT_TIMEOUT_MS}ms`
 						: `Script exited with code ${result.code}${result.stderr ? ": " + result.stderr.slice(0, 500) : ""}${result.stdoutOversize ? " [stdout truncated at 1 MB]" : ""}`,
+					timedOut: result.timedOut || undefined,
 					usage: emptyUsage(),
 					inputHash,
 					endedAt: Date.now(),
@@ -1715,7 +1790,7 @@ async function executePhaseInner(
 				loop: { iteration: i, lastOutput, maxIterations: maxIters },
 			}, (ref) => readRefs.push(ref));
 			const body = preRead + interpolate(phase.task ?? "", bodyCtx).text;
-			const r = await runOne(agentName, body, liveSink(state, phase.id, emitProgress));
+			const r = await runOne(agentName, body, liveSink(state, phase.id, emitProgress), undefined, contractCheck);
 			usages.push(r.usage);
 			if (isFailed(r)) {
 				failedResult = r;
@@ -1758,6 +1833,7 @@ async function executePhaseInner(
 				status: "failed",
 				output: lastOutput || undefined,
 				usage: aggUsage,
+				timedOut: failedResult?.phaseTimeout || undefined,
 				error: failedResult?.errorMessage || failedResult?.stderr || (stop === "aborted" ? "Aborted" : `loop '${phase.id}' iteration ${iterations} failed`),
 				loop: { iterations, stop },
 				warnings: loopWarnings.length ? loopWarnings : undefined,
@@ -1829,6 +1905,7 @@ async function executePhaseInner(
 				status: "failed",
 				usage: variantUsage,
 				error: `tournament '${phase.id}': all ${competitors.length} variants failed`,
+				timedOut: ran.some((r) => r.phaseTimeout) || undefined,
 				budgetTruncated: budgetSkipCount > 0 || undefined,
 				tournament: { variants: competitors.length, winner: 0, mode },
 				inputHash,

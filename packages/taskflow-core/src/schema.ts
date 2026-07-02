@@ -7,6 +7,7 @@
 
 import * as path from "node:path";
 import { StringEnum } from "./typebox-helpers.ts";
+import { contractShapeErrors } from "./contract.ts";
 import { Type, type Static } from "typebox";
 import { WORKSPACE_KEYWORDS } from "./workspace.ts";
 
@@ -162,7 +163,7 @@ const PhaseSchema = Type.Object(
 		timeout: Type.Optional(
 			Type.Number({
 				description:
-					"[script] Max execution time in milliseconds (default 60000). Must be >= 1000 and <= 300000.",
+					"Max execution time in milliseconds. For script phases: caps the shell command (default 60000, max 300000). For agent-running phases (agent/gate/reduce/map/parallel/loop/tournament): caps EACH subagent call — on expiry the subagent is aborted and the phase fails with a 'timedOut' marker (never retried). Not supported for approval/flow phases. Must be >= 1000.",
 			}),
 		),
 
@@ -226,6 +227,12 @@ const PhaseSchema = Type.Object(
 		),
 		retry: Type.Optional(RetrySchema),
 		output: Type.Optional(StringEnum(OUTPUT_FORMATS, { description: "Parse output as text or json", default: "text" })),
+		expect: Type.Optional(
+			Type.Unknown({
+				description:
+					"Output contract for this phase's JSON output (requires output:'json'). A small JSON-Schema-like shape: {type, properties, required, items, enum}. Validated the moment the subagent finishes; a violation fails the phase with a precise diagnostic (eligible for the phase's explicit 'retry'). Valid for agent/gate/reduce/loop phases.",
+			}),
+		),
 		model: Type.Optional(Type.String({ description: "Model override for this phase" })),
 		thinking: Type.Optional(Type.String({ description: "Thinking level override for this phase" })),
 		tools: Type.Optional(Type.Array(Type.String(), { description: "Restrict tools for this phase's agent" })),
@@ -722,7 +729,12 @@ export function validateTaskflow(def: unknown, opts: ValidationOptions = {}): Va
 		if (type !== "script") {
 			if (p.run !== undefined) errors.push(`Phase '${p.id}' (${type}): 'run' is only valid for script phases`);
 			if (p.input !== undefined) errors.push(`Phase '${p.id}' (${type}): 'input' is only valid for script phases`);
-			if (p.timeout !== undefined) errors.push(`Phase '${p.id}' (${type}): 'timeout' is only valid for script phases`);
+			if (p.timeout !== undefined) {
+				if (type === "approval" || type === "flow")
+					errors.push(`Phase '${p.id}' (${type}): 'timeout' is not supported for ${type} phases`);
+				else if (typeof p.timeout !== "number" || !Number.isFinite(p.timeout) || p.timeout < 1000)
+					errors.push(`Phase '${p.id}' (${type}): 'timeout' must be a number >= 1000 ms`);
+			}
 		}
 		if (p.retry) {
 			if (typeof p.retry.max !== "number" || p.retry.max < 0) {
@@ -739,6 +751,18 @@ export function validateTaskflow(def: unknown, opts: ValidationOptions = {}): Va
 		}
 		if (p.join && !JOIN_MODES.includes(p.join as JoinMode)) {
 			errors.push(`Phase '${p.id}': unknown join mode '${p.join}'`);
+		}
+
+		// Output contract (`expect`) validation.
+		if (p.expect !== undefined) {
+			const EXPECT_TYPES = new Set(["agent", "gate", "reduce", "loop"]);
+			if (!EXPECT_TYPES.has(type)) {
+				errors.push(`Phase '${p.id}' (${type}): 'expect' is only valid for agent/gate/reduce/loop phases`);
+			} else if (p.output !== "json") {
+				errors.push(`Phase '${p.id}': 'expect' requires 'output': "json" (the contract validates the parsed JSON output)`);
+			} else {
+				for (const e of contractShapeErrors(p.expect)) errors.push(`Phase '${p.id}': ${e}`);
+			}
 		}
 
 		// Cache policy validation (cross-run memoization).

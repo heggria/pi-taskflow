@@ -2,6 +2,68 @@
 
 All notable changes to taskflow are documented here. This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 
+## [Unreleased]
+
+### Fixed (adversarial review of the features below)
+- **Peek `--item` now keys by positional label, not section order.** A
+  budget-skipped map item has no section in the merged output, so section-order
+  indexing silently returned the WRONG item's content for every position after
+  the gap. `splitItems` now parses each `### [k/N]` label and keys by `k`; a
+  missing item returns "not found (budget-skipped items have no section)" with
+  the available indices.
+- **`/tf peek` rejects non-numeric `--item`/`--limit`** with a usage message
+  instead of passing `NaN` through ("Item NaN out of range").
+- **Contract `enum` comparison is now key-order-insensitive** for object
+  literals (structural `deepEqual` instead of `JSON.stringify` equality).
+- **Tournament phases propagate `timedOut`** when all variants fail by
+  phase-timeout (the custom all-failed return path missed the marker).
+- **Codex MCP `taskflow_run` persists terminal run state even if the runtime
+  throws** (`finally`-wrapped saveRun), and both `taskflow_run` /
+  `taskflow_peek` descriptions cross-reference the runId so LLM callers chain
+  them.
+- **`verifyTaskflow`'s contract pass scans more ref sources** — `context`,
+  `input`, `judge`, `with` values, and array-form `run` — closing false-negative
+  gaps for `{steps.X.json.field}` typos.
+
+### Added
+- **Peek — post-hoc inspection of intermediate phase outputs.** `/tf peek
+  <runId> [phaseId]` (pi) and the `taskflow_peek` MCP tool (Codex) read one
+  phase's output from a stored run: omit `phaseId` for a phase listing
+  (status + output size), `--json` for the parsed JSON, `--item <n>` for one
+  section of a map/parallel fan-out, `--limit <chars>` to adjust truncation.
+  Output is hard-truncated (default 4000 chars, ceiling 32000) and the
+  operation is read-only + explicitly human/tool-invoked, so the
+  context-isolation contract (only the final output enters the conversation)
+  is preserved — peek is the debugging escape hatch for "phase 4 of 12
+  produced garbage" without re-running the whole flow. The Codex MCP
+  `taskflow_run` now persists run state (throttled + terminal, same contract
+  as the pi adapter) and reports the runId, so MCP runs are peekable too.
+- **Per-phase `timeout` for agent-running phases.** Previously only `script`
+  phases had a time cap; every other phase type could run unboundedly (the
+  idle watchdog only catches silent stalls, not busy-but-never-finishing
+  subagents). `timeout` (ms, >= 1000) now caps EACH subagent call of an
+  agent/gate/reduce/map/parallel/loop/tournament phase: on expiry the
+  subagent is aborted, the phase fails with a `timedOut: true` marker
+  (rendered as ⏱ in the pi TUI), and the failure is deterministic — never
+  retried (neither explicit `retry` nor the transient fallback), so a capped
+  call can't double-spend. Not valid on approval/flow phases (validation
+  error). Script phases keep their existing child-process semantics and now
+  also record `timedOut` on the phase state.
+- **Output schema contracts (`expect`).** A JSON-emitting phase
+  (agent/gate/reduce/loop with `output: "json"`) can declare the shape its
+  output must satisfy — a small JSON-Schema-like contract (`type`,
+  `properties`, `required`, `items`, `enum`, nested). The runtime validates
+  the parsed output the moment the subagent finishes; a violation fails the
+  phase with per-path diagnostics (e.g. `$.score: required key is missing`)
+  and is retryable under the phase's explicit `retry` policy — turning
+  "phase completed but the shape is wrong and downstream silently
+  mis-parses" into an immediate, precise failure at the source. Statically,
+  `validateTaskflow` rejects malformed contracts and `verifyTaskflow` gains a
+  `contract` pass that warns when a `{steps.X.json.field}` ref names a field
+  absent from X's declared contract — catching ref typos before a single
+  token is spent. Zero new dependencies (hand-rolled total validator in
+  `taskflow-core/src/contract.ts`).
+
 ## [0.1.3] — 2026-07-02
 
 ### Added

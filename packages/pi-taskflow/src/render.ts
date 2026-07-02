@@ -127,16 +127,17 @@ function phaseDetail(phase: Phase, ps: PhaseState | undefined, theme: Theme): st
 	if (ps.status === "failed") {
 		const e = (ps.error ?? "failed").replace(/\s+/g, " ");
 		const snip = e.length > 56 ? `${e.slice(0, 56)}…` : e;
+		const tag = ps.timedOut ? theme.fg("warning", "⏱ ") : "";
 		if (isFanout && ps.subProgress) {
 			const { done, total, failed } = ps.subProgress;
 			return (
 				theme.fg("toolOutput", `${done - failed}/${total}`) +
 				theme.fg("error", ` ${failed}✗`) +
-				(snip ? theme.fg("error", `  ${snip}`) : "") +
+				(snip ? tag + theme.fg("error", `  ${snip}`) : tag) +
 				(ps.warnings?.length ? theme.fg("warning", `  ⚠${ps.warnings.length}`) : "")
 			);
 		}
-		return theme.fg("error", snip) + (ps.warnings?.length ? theme.fg("warning", `  ⚠${ps.warnings.length}`) : "");
+		return tag + theme.fg("error", snip) + (ps.warnings?.length ? theme.fg("warning", `  ⚠${ps.warnings.length}`) : "");
 	}
 
 	const t = phaseElapsed(ps);

@@ -57,6 +57,10 @@ export interface PhaseState {
 	gate?: { verdict: "pass" | "block"; reason?: string };
 	/** Total subagent attempts incl. retries (when > calls, a retry happened). */
 	attempts?: number;
+	/** True when the phase's `timeout` cap expired and the subagent was aborted.
+	 *  The phase fails (status "failed") — this marker distinguishes a timeout
+	 *  from an ordinary failure for renderers and post-hoc inspection. */
+	timedOut?: boolean;
 	/** True when a map/parallel fan-out was cut short by the budget cap, or by the
 	 *  dynamic sub-flow fan-out safety limit (MAX_DYNAMIC_MAP_ITEMS). */
 	budgetTruncated?: boolean;

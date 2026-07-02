@@ -8,6 +8,7 @@
 
 import type { Phase } from "./schema.ts";
 import { asArray, dependenciesOf, LOOP_DEFAULT_MAX_ITERATIONS } from "./schema.ts";
+import { type OutputContract } from "./contract.ts";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -20,7 +21,8 @@ export type IssueCategory =
 	| "budget-overflow"
 	| "concurrency"
 	| "ref-integrity"
-	| "guard-contradiction";
+	| "guard-contradiction"
+	| "contract";
 
 export interface VerificationIssue {
 	/** Affected phase id, if applicable. */
@@ -357,6 +359,61 @@ function detectGuardContradictions(phases: Phase[]): VerificationIssue[] {
 
 // ---------------------------------------------------------------------------
 // Entry point
+/** #7 Contract refs: a `{steps.X.json.field}` ref whose target phase X declares
+ *  an `expect` object contract that provably lacks `field`. Only the first path
+ *  segment is checked, and only against object contracts with `properties` —
+ *  a contract without `properties` (or a non-object contract) claims nothing
+ *  about keys, so no issue is raised (no false positives). */
+function detectContractRefMismatches(phases: Phase[]): VerificationIssue[] {
+	const issues: VerificationIssue[] = [];
+	const contracts = new Map<string, OutputContract>();
+	for (const p of phases) {
+		const c = (p as { expect?: unknown }).expect;
+		if (c && typeof c === "object" && !Array.isArray(c)) contracts.set(p.id, c as OutputContract);
+	}
+	if (contracts.size === 0) return issues;
+
+	const REF = /\{steps\.([a-zA-Z0-9_-]+)\.json\.([a-zA-Z0-9_-]+)/g;
+	for (const p of phases) {
+		const withValues = p.with && typeof p.with === "object" ? Object.values(p.with).filter((v): v is string => typeof v === "string") : [];
+		const sources: Array<string | undefined> = [
+			p.task,
+			p.when,
+			p.until,
+			p.over,
+			p.input,
+			p.judge,
+			...asArray<string>(p.eval as string[] | undefined),
+			...asArray<string>(p.context as string[] | undefined),
+			...withValues,
+			...(Array.isArray(p.run) ? p.run : []),
+			...(Array.isArray(p.branches) ? p.branches.map((b) => b?.task) : []),
+		];
+		for (const src of sources) {
+			if (typeof src !== "string") continue;
+			for (const m of src.matchAll(REF)) {
+				const [, target, field] = m;
+				const c = contracts.get(target);
+				if (!c) continue;
+				const isObj = c.type === "object" || (c.type === undefined && c.properties !== undefined);
+				if (!isObj || !c.properties || typeof c.properties !== "object") continue;
+				if (!(field in c.properties)) {
+					issues.push({
+						phaseId: p.id,
+						message:
+							`Phase '${p.id}' references {steps.${target}.json.${field}} but '${target}' declares an ` +
+							`output contract without a '${field}' property. The ref will resolve empty at runtime. ` +
+							`Add '${field}' to the contract's properties or fix the ref.`,
+						severity: "warning",
+						category: "contract",
+					});
+				}
+			}
+		}
+	}
+	return issues;
+}
+
 // ---------------------------------------------------------------------------
 
 /**
@@ -381,6 +438,7 @@ export function verifyTaskflow(flow: VerifiableFlow): VerificationResult {
 	issues.push(...detectBudgetOverflow(safeFlow));
 	issues.push(...detectConcurrencyWarnings(safeFlow, succ));
 	issues.push(...detectGuardContradictions(phases));
+	issues.push(...detectContractRefMismatches(phases));
 
 	const ok = !issues.some((i) => i.severity === "error");
 	return { ok, issues };

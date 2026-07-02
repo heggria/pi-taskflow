@@ -31,6 +31,8 @@ export function isTransientError(r: RunResult): boolean {
 	if (r.stopReason === "aborted") return false;
 	// Idle timeout is a deterministic stall — retrying won't help.
 	if (r.stopReason === "error" && r.idleTimeout) return false;
+	// A phase-timeout abort is deterministic: retrying would double-spend the cap.
+	if (r.phaseTimeout) return false;
 	const hay = `${r.errorMessage ?? ""} ${r.stderr ?? ""} ${r.output ?? ""}`;
 	return TRANSIENT_ERROR_RE.test(hay);
 }

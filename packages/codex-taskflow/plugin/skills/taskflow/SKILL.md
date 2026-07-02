@@ -18,6 +18,7 @@ In Codex you drive Taskflow through its **MCP tools**:
 | `taskflow_show` | Show a saved flow's full definition as JSON. |
 | `taskflow_verify` | Statically verify a flow (cycles, missing deps, undefined refs) — no execution. |
 | `taskflow_compile` | Render a flow's DAG as a diagram (an inline SVG image) + a verification report — no execution. |
+| `taskflow_peek` | Inspect one phase's intermediate output from a stored run (post-hoc debugging). Omit `phaseId` to list phases; `json`/`item`/`limit` refine the slice. Hard-truncated, read-only. |
 
 ## When to use
 
@@ -80,6 +81,14 @@ fields `run`/`input`/`timeout`).
 **Always `taskflow_verify` (or `taskflow_compile`) a non-trivial flow before
 `taskflow_run`** — it catches cycles, missing deps, and undefined refs for zero
 tokens.
+
+Useful per-phase fields beyond the basics: `retry` (`{max, backoffMs, factor}`),
+`timeout` (ms cap per subagent call — aborts and fails the phase with a
+`timedOut` marker, never retried; >= 1000, not on approval/flow), and `expect`
+(an output contract for `output: "json"` phases — `{type, properties, required,
+items, enum}` — a violation fails the phase with per-path diagnostics and is
+retryable under `retry`; `taskflow_verify` also warns when a
+`{steps.X.json.field}` ref names a field absent from X's contract).
 
 ## Interpolation
 

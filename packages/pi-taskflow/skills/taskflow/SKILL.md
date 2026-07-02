@@ -114,6 +114,8 @@ Call the `taskflow` tool. To run a brand-new flow you write inline, pass
 | `when` | conditional guard — skip the phase unless the expression is truthy. Supports `{refs}`, `== != < > <= >=`, `&& \|\| !`, parentheses, quoted strings/numbers. Parse errors fail **open** (phase runs). |
 | `join` | dependency join: `"all"` (default — wait for every dep) or `"any"` (OR-join — run as soon as one dep completes). |
 | `retry` | `{ "max": N, "backoffMs": ms, "factor": k }` — retry a failing subagent up to N times; delay is `backoffMs * factor^attempt` (`factor:1`=fixed, `2`=exponential). |
+| `timeout` | max ms per subagent call (>= 1000). On expiry the subagent is aborted and the phase fails with a `timedOut` marker — deterministic, **never retried**. Valid on any agent-running phase; note it caps EACH call, so a map/parallel/loop/tournament phase's wall time is per item/iteration/variant (a tournament's judge call gets its own cap too). Script phases keep their own child-process timeout (default 60s, max 300s). Not supported on approval/flow. Pair with `optional: true` + a downstream fallback phase to degrade instead of failing the run. |
+| `expect` | output contract for `output: "json"` phases (agent/gate/reduce/loop): a JSON-Schema-like shape `{type, properties, required, items, enum}` validated the moment the subagent finishes. A violation fails the phase with a precise diagnostic (e.g. `$.score: required key is missing`) and is retryable under the phase's explicit `retry`. `verify`/`compile` also statically warn when a `{steps.X.json.field}` ref names a field absent from X's declared contract. |
 
 ### Conditional routing (when + gate/branches)
 
@@ -573,7 +575,7 @@ variables, and storage paths — read `configuration.md` (next to this file).
 Quick reference:
 
 - **Flow:** `name`, `description`, `concurrency` (default 8), `budget` (`maxUSD`/`maxTokens`), `agentScope` (user|project|both), `args`, `strictInterpolation`.
-- **Phase:** `model`, `thinking`, `tools` (whitelist), `cwd`, `output:"json"`, `concurrency` (map/parallel fan-out), `when`, `join` (all|any), `retry`, `use`/`with` (flow), `optional` (fail-soft — a failed/blocked phase won't abort the run), `final`.
+- **Phase:** `model`, `thinking`, `tools` (whitelist), `cwd`, `output:"json"`, `expect` (output contract), `concurrency` (map/parallel fan-out), `when`, `join` (all|any), `retry`, `timeout` (per-call ms cap), `use`/`with` (flow), `optional` (fail-soft — a failed/blocked phase won't abort the run), `final`.
 - **Cross-run caching:** add `cache: { "scope": "cross-run" }` to a phase to memoize its output across runs (same input → instant reuse, zero tokens), or set `incremental: true` at the flow level (or pass `incremental: true` to `run`) to default every phase to cross-run reuse. See `configuration.md` for `ttl`, `fingerprint` (git/glob/file/env invalidation), scope options, and the `incremental` precedence rules.
 - **Precedence (model/thinking/tools):** phase value → agent frontmatter (resolved via `modelRoles`) → global/default.
 - **Concurrency:** same-layer phases use `flow.concurrency`; a `map`/`parallel` phase uses `phase.concurrency ?? flow.concurrency ?? 8`.
@@ -619,9 +621,9 @@ Notes & limitations:
   content-addressable, not positional.
 - Failed items and **budget-skipped** items are never cached, so they always
   re-execute on the next run.
-- `{steps.<map>.json[k]}` indexes the k-th **successful** item (not the k-th
-  position in `over`); the merged `output` text, however, IS positionally
-  aligned with `over` (labels read `[k/N]`).
+- `{steps.<map>.json.k}` (dot-index) indexes the k-th **successful** item (not
+  the k-th position in `over`); the merged `output` text, however, IS
+  positionally aligned with `over` (labels read `[k/N]`).
 - Within-run resume of a partially-completed map is not supported (only
   fully-completed maps resume within a run); cross-run per-item reuse covers the
   common case.
@@ -650,8 +652,32 @@ A run moves through: **running →** `completed` (a `final` phase produced outpu
 - **When to resume vs. re-run.** Resume when the inputs are unchanged and you just want to continue/retry the tail (fixed a gate, raised the budget, approved a checkpoint). Re-run from scratch when the task or upstream inputs changed — resume would reuse now-stale outputs. (For reuse *across* runs, opt a phase into `cache: {scope:"cross-run"}` — see configuration.md.)
 - **Budget mid-run.** When the run-wide `budget` is exceeded, remaining phases are skipped and an in-flight `map`/`parallel` stops spawning new items; the run ends `blocked` with the partial outputs preserved.
 - **Inspect runs.** `/tf runs` lists recent runs with status; `/tf show <name>` prints a saved flow's definition. Run state lives at `<project .pi>/taskflows/runs/<flowName>/<runId>.json` (gitignored).
+- **Peek at intermediate outputs.** `/tf peek <runId>` lists a run's phases (status + output size); `/tf peek <runId> <phaseId>` prints that phase's stored output — `--json` for the parsed JSON, `--item <n>` for one section of a map/parallel fan-out, `--limit <chars>` to adjust the hard truncation (default 4000, max 32000). Read-only and explicitly human-invoked: the context-isolation contract (only the final output enters the conversation) still holds for the LLM — peek is the debugging escape hatch when one phase of many produced garbage and you don't want to re-run the whole flow.
+
+### Output contracts (`expect`)
+
+Declare the shape a JSON-emitting phase must produce; the runtime enforces it the
+moment the subagent finishes — turning "phase completed but the shape is wrong and
+downstream silently mis-parses" into an immediate, precise failure at the source.
+
+```jsonc
+{ "id": "triage", "type": "agent", "agent": "analyst", "output": "json",
+  "task": "Classify. Output ONLY JSON {\"route\":\"deep\"|\"quick\",\"score\":0-1}.",
+  "expect": { "type": "object", "required": ["route", "score"],
+               "properties": { "route": { "enum": ["deep", "quick"] },
+                                "score": { "type": "number" } } },
+  "retry": { "max": 2, "backoffMs": 0 } }
+```
+
+- Supported keywords: `type` (object|array|string|number|integer|boolean|null),
+  `properties`, `required`, `items`, `enum`. Nested contracts compose.
+- A violation fails the phase with per-path diagnostics; with an explicit
+  `retry` the subagent gets another attempt (the diagnostic is deterministic, so
+  transient auto-retry does NOT apply).
+- Static payoff: `verify` warns when any `{steps.X.json.field}` ref names a field
+  X's contract doesn't declare — catching ref typos before a single token is spent.
 
 ## User commands
 
-- `/tf list` · `/tf run <name> [args]` · `/tf show <name>` · `/tf compile <name> [lr|td]` · `/tf runs` · `/tf resume <runId>`
+- `/tf list` · `/tf run <name> [args]` · `/tf show <name>` · `/tf compile <name> [lr|td]` · `/tf runs` · `/tf peek <runId> [phaseId] [--json] [--item <n>] [--limit <chars>]` · `/tf resume <runId>`
 - `/tf:<name> [args]` — shortcut for each saved flow
