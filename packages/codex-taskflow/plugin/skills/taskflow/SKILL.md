@@ -64,11 +64,12 @@ When you outgrow the shorthand, define a DAG of phases. Phase types:
     { "id": "discover", "type": "agent", "agent": "scout",
       "task": "List every HTTP endpoint in src/. Return a JSON array of paths." },
     { "id": "audit", "type": "map", "over": "{steps.discover.json}",
-      "agent": "security-reviewer",
+      "agent": "security-reviewer", "dependsOn": ["discover"],
       "task": "Audit endpoint {item} for authz/injection issues." },
     { "id": "gate", "type": "gate", "agent": "critic", "dependsOn": ["audit"],
       "task": "If any HIGH severity finding exists, VERDICT: BLOCK, else PASS." },
-    { "id": "report", "type": "reduce", "agent": "doc-writer", "dependsOn": ["gate"],
+    { "id": "report", "type": "reduce", "agent": "doc-writer",
+      "from": ["audit"], "dependsOn": ["gate"],
       "task": "Write a prioritized remediation report from {steps.audit.output}." }
   ]
 }
