@@ -53,7 +53,7 @@ test("mcp: tools/list exposes the taskflow tools with schemas", async () => {
 	const names = res.result.tools.map((t: any) => t.name);
 	assert.deepEqual(
 		names.sort(),
-		["taskflow_compile", "taskflow_list", "taskflow_run", "taskflow_show", "taskflow_verify"],
+		["taskflow_compile", "taskflow_list", "taskflow_peek", "taskflow_run", "taskflow_show", "taskflow_verify"],
 	);
 	for (const t of res.result.tools) {
 		assert.equal(typeof t.description, "string");
@@ -145,11 +145,11 @@ test("mcp: tools/call unknown tool returns invalid-params", async () => {
 	assert.equal(res.error.code, -32602);
 });
 
-test("mcp: makeToolHandlers exposes the five tools", () => {
+test("mcp: makeToolHandlers exposes the six tools", () => {
 	const tools = makeToolHandlers(process.cwd());
 	assert.deepEqual(
 		Object.keys(tools).sort(),
-		["taskflow_compile", "taskflow_list", "taskflow_run", "taskflow_show", "taskflow_verify"],
+		["taskflow_compile", "taskflow_list", "taskflow_peek", "taskflow_run", "taskflow_show", "taskflow_verify"],
 	);
 });
 

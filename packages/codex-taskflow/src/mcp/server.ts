@@ -27,6 +27,11 @@ import {
 	executeTaskflow,
 	getFlow,
 	listFlows,
+	newRunId,
+	peekRun,
+	saveRun,
+	DEFAULT_KEPT_RUNS,
+	DEFAULT_RUN_AGE_DAYS,
 	compileTaskflow,
 	verifyTaskflow,
 	desugar,
@@ -197,6 +202,24 @@ const TOOLS: McpTool[] = [
 			},
 		},
 	},
+	{
+		name: "taskflow_peek",
+		title: "Peek at a run's phase output",
+		description:
+			"Inspect one phase's intermediate output from a stored run (post-hoc debugging). Omit `phaseId` to list the run's phases. Output is hard-truncated (default 4000 chars) so a peek never floods the context window. Read-only.",
+		inputSchema: {
+			type: "object",
+			additionalProperties: false,
+			properties: {
+				runId: { type: "string", description: "The run to inspect (from a prior taskflow_run or the runs index)." },
+				phaseId: { type: "string", description: "Phase to peek at. Omit to list all phases with status + output size." },
+				json: { type: "boolean", description: "Return the phase's parsed JSON instead of its text output." },
+				item: { type: "number", description: "For map/parallel phases: the 1-based item section to extract." },
+				limit: { type: "number", description: "Truncation cap in chars (default 4000, max 32000)." },
+			},
+			required: ["runId"],
+		},
+	},
 ];
 
 /** Resolve a flow from params: inline `define` (desugared) or saved `name`. */
@@ -214,7 +237,7 @@ function resolveFlow(cwd: string, params: { name?: string; define?: unknown }): 
 
 function mkRunState(def: Taskflow, args: Record<string, unknown>, cwd: string): RunState {
 	return {
-		runId: `mcp-${def.name ?? "flow"}-${Date.now()}`,
+		runId: newRunId(def.name ?? "flow"),
 		flowName: def.name ?? "flow",
 		def,
 		args,
@@ -252,11 +275,40 @@ export function makeToolHandlers(cwd: string): Record<string, (args: Record<stri
 			const state = mkRunState(def, (args.args as Record<string, unknown>) ?? {}, cwd);
 			if (args.incremental === true) (deps as RuntimeDeps & { cacheScopeDefault?: string }).cacheScopeDefault = "cross-run";
 
+			// Persist run state (throttled + final) so taskflow_peek / resume can read
+			// intermediate phase outputs after the run — same contract as the pi adapter.
+			const cleanupConfig = { maxKeep: DEFAULT_KEPT_RUNS, maxAgeDays: DEFAULT_RUN_AGE_DAYS };
+			let lastPersist = 0;
+			deps.persist = (s) => {
+				const now = Date.now();
+				if (now - lastPersist >= 1000) {
+					lastPersist = now;
+					saveRun(s, cleanupConfig);
+				}
+			};
+
 			const res = await executeTaskflow(state, deps);
+			try {
+				saveRun(state, cleanupConfig); // force-persist terminal state
+			} catch {
+				/* fail-open: persistence must never sink a completed run */
+			}
 			const header = res.ok ? "✓ taskflow complete" : "✗ taskflow did not fully succeed";
 			const u = res.totalUsage;
-			const usageLine = `\n\n— ${u.turns} turns · in ${u.input} · out ${u.output} tokens`;
+			const usageLine = `\n\n— ${u.turns} turns · in ${u.input} · out ${u.output} tokens · run ${state.runId}`;
 			return textContent(`${header}\n\n${res.finalOutput}${usageLine}`, !res.ok);
+		},
+
+		taskflow_peek: async (args) => {
+			const runId = String(args.runId ?? "");
+			if (!runId) return textContent("taskflow_peek requires `runId`.", true);
+			const res = peekRun(cwd, runId, {
+				phaseId: typeof args.phaseId === "string" ? args.phaseId : undefined,
+				json: args.json === true,
+				item: typeof args.item === "number" ? args.item : undefined,
+				limit: typeof args.limit === "number" ? args.limit : undefined,
+			});
+			return textContent(res.text, !res.ok);
 		},
 
 		taskflow_list: async () => {

@@ -38,6 +38,7 @@ import {
 	listRuns,
 	loadRun,
 	newRunId,
+	peekRun,
 	type RunState,
 	saveFlow,
 	saveRun,
@@ -1113,9 +1114,9 @@ export default function (pi: ExtensionAPI) {
 
 	// ---- The /tf user command ----
 	pi.registerCommand("tf", {
-		description: "Taskflow: list | run <name> | show <name> | compile <name> | runs | init",
+		description: "Taskflow: list | run <name> | show <name> | compile <name> | runs | peek <runId> [phaseId] | init",
 		getArgumentCompletions: (prefix) => {
-			const subs = ["list", "run", "show", "runs", "resume", "init", "save", "verify", "compile", "ir", "provenance", "why-stale", "recompute"];
+			const subs = ["list", "run", "show", "runs", "peek", "resume", "init", "save", "verify", "compile", "ir", "provenance", "why-stale", "recompute"];
 			const items = subs.map((s) => ({ value: s, label: s }));
 			const filtered = items.filter((i) => i.value.startsWith(prefix));
 			return filtered.length > 0 ? filtered : null;
@@ -1257,6 +1258,27 @@ export default function (pi: ExtensionAPI) {
 					const { report } = await recomputeTaskflow(prev, deps, [seed], { dryRun: true });
 					ctx.ui.notify(formatRecompute(report), "info");
 				}
+				return;
+			}
+
+			if (sub === "peek") {
+				const tokens = (arg ?? "").trim().split(/\s+/).filter(Boolean);
+				const flags = { json: false, item: undefined as number | undefined, limit: undefined as number | undefined };
+				const positional: string[] = [];
+				for (let i = 0; i < tokens.length; i++) {
+					const t = tokens[i];
+					if (t === "--json") flags.json = true;
+					else if (t === "--item") flags.item = Number(tokens[++i]);
+					else if (t === "--limit") flags.limit = Number(tokens[++i]);
+					else positional.push(t);
+				}
+				const [runId, phaseId] = positional;
+				if (!runId) {
+					ctx.ui.notify("Usage: /tf peek <runId> [phaseId] [--json] [--item <n>] [--limit <chars>]", "warning");
+					return;
+				}
+				const res = peekRun(ctx.cwd, runId, { phaseId, json: flags.json, item: flags.item, limit: flags.limit });
+				ctx.ui.notify(res.text, res.ok ? "info" : "error");
 				return;
 			}
 

@@ -53,6 +53,9 @@ export interface RunResult {
 	attempts?: number;
 	/** Set when the subagent was killed by the idle watchdog (not a user abort). */
 	idleTimeout?: boolean;
+	/** Set when the subagent was aborted by the phase's own `timeout` cap (not a
+	 *  user abort, not an idle stall). Deterministic — never retried. */
+	phaseTimeout?: boolean;
 }
 
 /** A streaming progress tick from a running subagent. */

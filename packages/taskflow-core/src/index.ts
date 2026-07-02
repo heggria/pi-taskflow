@@ -10,6 +10,8 @@
  */
 
 export * from "./schema.ts";
+export * from "./contract.ts";
+export * from "./peek.ts";
 export * from "./runtime.ts";
 export * from "./cache.ts";
 export * from "./interpolate.ts";
